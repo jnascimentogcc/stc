@@ -1,0 +1,47 @@
+/*
+ * Bridge between the normative tokens (tokens.css, docs/ui-spec.md) and the semantic color
+ * names used by SpartanNG helm components. The token names and values stay the source of truth;
+ * this file only aliases them. Note: the ui-spec `--accent` is the brand color, which helm calls
+ * `primary`; helm's `accent` (subtle hover surface) maps to `--accent-soft`.
+ */
+
+/* Dark theme is selected with [data-theme="dark"] (ui-spec §11). */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+@theme inline {
+  --color-background: var(--bg);
+  --color-foreground: var(--text);
+  --color-card: var(--surface);
+  --color-card-foreground: var(--text);
+  --color-popover: var(--surface);
+  --color-popover-foreground: var(--text);
+  --color-primary: var(--accent);
+  --color-primary-foreground: var(--text-inverse);
+  --color-secondary: var(--surface-2);
+  --color-secondary-foreground: var(--text);
+  --color-muted: var(--surface-muted);
+  --color-muted-foreground: var(--text-3);
+  --color-accent: var(--accent-soft);
+  --color-accent-foreground: var(--text);
+  --color-destructive: var(--danger);
+  --color-border: var(--border);
+  --color-input: var(--border-2);
+  --color-ring: var(--accent);
+
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-text-2: var(--text-2);
+  --color-text-3: var(--text-3);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-info: var(--info);
+
+  --font-sans: var(--sans);
+  --font-mono: var(--mono);
+
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+}

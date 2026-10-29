@@ -1,0 +1,8 @@
+{
+  "app": {
+    "name": "STC",
+    "tagline": "Talk is cheap. Show me the code.",
+    "placeholder": "The chat is not implemented yet.",
+    "toggleTheme": "Toggle light/dark theme"
+  }
+}

@@ -1,0 +1,26 @@
+<ng-container *transloco="let t">
+  <header class="border-b border-border bg-surface" style="height: var(--header-height)">
+    <div
+      class="mx-auto flex h-full items-center gap-3 px-4 sm:px-6"
+      style="max-width: var(--content-max)"
+    >
+      <span class="font-mono font-medium">{{ t('app.name') }}</span>
+      <span class="text-text-3">{{ t('app.tagline') }}</span>
+      <button
+        hlmBtn
+        variant="ghost"
+        size="icon"
+        class="ml-auto"
+        type="button"
+        [attr.aria-label]="t('app.toggleTheme')"
+        (click)="theme.toggle()"
+      >
+        <ng-icon [name]="theme.isDark() ? 'lucideSun' : 'lucideMoon'" />
+      </button>
+    </div>
+  </header>
+  <main class="mx-auto px-4 py-6 sm:px-6" style="max-width: var(--content-max)">
+    <p class="text-text-2">{{ t('app.placeholder') }}</p>
+    <router-outlet />
+  </main>
+</ng-container>

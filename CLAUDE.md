@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository state
 
-Backend skeleton only: `pyproject.toml`, package `stc` in `src/` (CLI stubs, settings, provider interfaces, `/api/health`), tests, `Dockerfile`, `docker-compose.yml` (`db` + `api`). Indexer, query engine, DB migrations, MCP server and the Angular frontend are **not implemented yet**; the stack in `docs/tech-stack.md` is still a proposal beyond the skeleton.
+Backend skeleton only: `pyproject.toml`, package `stc` in `src/` (CLI stubs, settings, provider interfaces, `/api/health`), tests, `Dockerfile`, `docker-compose.yml` (`db` + `api`), and an Angular app shell in `frontend/` (Tailwind with the ui-spec tokens, SpartanNG helm (button only), Lucide icons, light/dark toggle, Transloco `en`, Vitest; placeholder page only). Indexer, query engine, DB migrations, MCP server and the chat UI are **not implemented yet**; the stack in `docs/tech-stack.md` is still a proposal beyond the skeleton.
 
 Main branch: `develop` (GitHub remote `jnascimentogcc/stc`).
 
@@ -22,6 +22,21 @@ uv run stc --help                         # CLI (commands other than `version` a
 uv run uvicorn stc.api.app:app --reload   # API on :8000, health at /api/health
 docker compose up --build                 # needs .env (copy .env.example)
 ```
+
+Frontend, from `frontend/` (npm, Angular CLI, Vitest):
+
+```bash
+npm install
+npm start                                 # dev server on :4200
+npm run build
+npm test -- --no-watch                    # all tests
+npm test -- --no-watch --include src/app/app.spec.ts   # a single spec file
+npx prettier --check "src/**/*.{ts,html,css}"
+```
+
+`src/styles/tokens.css` is a copy of the normative tokens in `docs/ui-spec.md` §3.2; keep them in sync. `src/styles/spartan-theme.css` aliases them to the semantic names helm components expect (note: helm `primary` = ui-spec `--accent`; helm `accent` = `--accent-soft`). Dark theme is `[data-theme="dark"]`, toggled by `ThemeService`. Translations live in `public/i18n/<lang>.json`.
+
+SpartanNG components are generated into `src/app/ui/` (config in `components.json`, import alias `@spartan-ng/helm/*`). Add one with `npx ng g @spartan-ng/cli:ui <name> --defaults </dev/null`. Icons: `@ng-icons/lucide` via `provideIcons`.
 
 ## Language
 
