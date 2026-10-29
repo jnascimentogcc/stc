@@ -122,7 +122,11 @@ def _sync_files(conn: psycopg.Connection, app_id: int, app: ScannedApplication) 
                     # derived knowledge behind (IDX-06, XCT-01).
                     cur.execute("DELETE FROM chunks WHERE file_id = %s", (current[0],))
                     cur.execute("DELETE FROM symbols WHERE file_id = %s", (current[0],))
-                    cur.execute("UPDATE files SET chunked_key = NULL WHERE id = %s", (current[0],))
+                    cur.execute("DELETE FROM signals WHERE file_id = %s", (current[0],))
+                    cur.execute(
+                        "UPDATE files SET chunked_key = NULL, signals_key = NULL WHERE id = %s",
+                        (current[0],),
+                    )
                 out.files_changed += 1
     return out
 

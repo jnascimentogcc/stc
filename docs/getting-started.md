@@ -52,7 +52,7 @@ limited `stc_app` role that the application uses, created for you by the next st
 uv run stc migrate-db
 ```
 
-Expect four `Applied 000N_...` lines (running it again prints `Database is up to date.`).
+Expect five `Applied 000N_...` lines (running it again prints `Database is up to date.`).
 
 ## 5. Detect and index (no external calls)
 
@@ -67,7 +67,17 @@ uv run stc index --root examples/demo-root --skip-embeddings
 ```
 
 Expect `demo-api` with one **secret** (`credentials.json`, excluded by file name and never
-indexed) and, at the end, 7 new chunks. `--skip-embeddings` stops before any external call.
+indexed), 10 new chunks, and a last line such as `Relations: 1 (1 new, 0 updated, 0 removed)`.
+`--skip-embeddings` stops before any external call.
+
+The relation comes from `demo-web` calling `http://demo-api/greet/...`, an endpoint that `demo-api`
+exposes. List it with its evidence (file and lines of the call):
+
+```bash
+uv run stc relations
+```
+
+Expect `demo-web -> demo-api  [http, high]` and `evidence: demo-web/src/client.ts:2-2`.
 
 ## 6. See what would be embedded (still no external calls)
 
@@ -75,7 +85,7 @@ indexed) and, at the end, 7 new chunks. `--skip-embeddings` stops before any ext
 uv run stc embed --dry-run
 ```
 
-Expect `7 chunk(s) to embed ... about 230 tokens (rough estimate)`.
+Expect `10 chunk(s) to embed ... about 360 tokens (rough estimate)`.
 
 ## 7. Embed for real (sends the demo code to OpenAI)
 
@@ -83,7 +93,7 @@ Expect `7 chunk(s) to embed ... about 230 tokens (rough estimate)`.
 uv run stc embed
 ```
 
-Expect `Embedded 7 chunk(s) ...`. It costs a fraction of a cent. Running it again embeds nothing.
+Expect `Embedded 10 chunk(s) ...`. It costs a fraction of a cent. Running it again embeds nothing.
 
 Optionally, `uv run stc check-providers` makes one tiny call per configured model to verify keys,
 model names and the 1536 embedding dimensions.
@@ -94,7 +104,7 @@ model names and the 1536 embedding dimensions.
 docker exec stc-dev-db psql -U postgres -d stc -c "select provider, model, vector_dims(embedding) as dims, count(*) from chunk_embeddings group by 1,2,3"
 ```
 
-Expect one row: your provider and model, `1536`, and `7`. To see how the code was split:
+Expect one row: your provider and model, `1536`, and `10`. To see how the code was split:
 
 ```bash
 docker exec stc-dev-db psql -U postgres -d stc -c "select f.path, c.kind, c.name, c.start_line, c.end_line from chunks c join files f on f.id = c.file_id order by f.path, c.start_line"

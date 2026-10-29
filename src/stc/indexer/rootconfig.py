@@ -12,6 +12,10 @@ Example:
     [[application]]                              # include a folder detection missed
     path = "tools/etl"
 
+    [[application]]                              # names other applications use to reach it
+    path = "services/billing"                    # (hosts, service names); used to link callers
+    hosts = ["billing", "billing.mycompany.com"]
+
     [[application]]                              # ignore a detected application
     path = "samples/demo"
     exclude = true
@@ -54,6 +58,7 @@ class ApplicationConfig(BaseModel):
     path: str | None = None
     paths: list[str] = Field(default_factory=list)
     exclude: bool = False
+    hosts: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _check(self) -> "ApplicationConfig":

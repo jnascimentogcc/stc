@@ -12,9 +12,10 @@ from stc.config import Settings, get_settings
 from stc.db.migrate import MigrationError, migrate
 from stc.indexer.chunk_store import chunk_pending
 from stc.indexer.embed_store import embed_pending, estimate_pending
-from stc.indexer.pipeline import detect_root, scan_root
+from stc.indexer.pipeline import detect_root, host_aliases, scan_root
 from stc.indexer.registry import sync_registry
 from stc.indexer.rootconfig import ConfigError
+from stc.indexer.signal_store import extract_pending, list_relations, rebuild_relations
 from stc.providers import (
     Message,
     ProviderError,
@@ -138,6 +139,7 @@ def index(
             "run `stc index` again.",
             err=True,
         )
+    _relations_stage(settings, root)
     if not skip_embeddings:
         _embed_stage(settings, dry_run=False, yes=yes, soft=True)
     if result.apps_missing:
@@ -184,6 +186,61 @@ def _embed_stage(settings: Settings, *, dry_run: bool, yes: bool, soft: bool = F
         f"Embedded {stats.chunks_embedded} chunk(s) ({stats.chunks_replaced} replaced stale "
         f"vectors) in {stats.requests} request(s), {stats.retries} retried."
     )
+
+
+def _relations_stage(settings: Settings, root: Path) -> None:
+    if settings.db_url is None:
+        typer.echo("STC_DB_URL is not set.", err=True)
+        raise typer.Exit(code=2)
+    try:
+        aliases = host_aliases(root)
+        with psycopg.connect(settings.db_url) as conn:
+            signals = extract_pending(conn, root)
+            relations = rebuild_relations(conn, aliases)
+    except (ConfigError, ValueError) as exc:
+        typer.echo(f"Relations failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    except psycopg.Error as exc:
+        typer.echo(f"Database error while deriving relations: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(
+        f"Signals: {signals.files_extracted} file(s) read, {signals.signals} signal(s). "
+        f"Relations: {relations.total} ({relations.added} new, {relations.updated} updated, "
+        f"{relations.removed} removed)."
+    )
+    if signals.files_skipped:
+        typer.echo(
+            f"{signals.files_skipped} file(s) skipped (unreadable or changed during the run); "
+            "run `stc index` again.",
+            err=True,
+        )
+
+
+@app.command()
+def relations(
+    root: RootOption = None,
+    refresh: Annotated[
+        bool, typer.Option("--refresh", help="Re-extract signals and re-derive before listing.")
+    ] = False,
+) -> None:
+    """List the relations between applications, with confidence and evidence."""
+    settings = get_settings()
+    if settings.db_url is None:
+        typer.echo("STC_DB_URL is not set.", err=True)
+        raise typer.Exit(code=2)
+    if refresh:
+        _relations_stage(settings, _resolve_root(root))
+    try:
+        with psycopg.connect(settings.db_url) as conn:
+            rows = list_relations(conn)
+    except psycopg.Error as exc:
+        typer.echo(f"Database error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    for source, target, type_, confidence, detail, evidence, count in rows:
+        arrow = "<->" if type_ == "shared_database" else "->"
+        typer.echo(f"{source} {arrow} {target}  [{type_}, {confidence}]  {detail}")
+        typer.echo(f"    evidence: {evidence} ({count} signal(s))")
+    typer.echo(f"{len(rows)} relation(s).", err=True)
 
 
 @app.command()
