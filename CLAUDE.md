@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository state
 
-Backend skeleton, OpenAI provider adapters (`src/stc/providers/`, tested against mocked HTTP only until `stc check-providers` is run with a real key), the database layer (`src/stc/db/`: migration runner and schema 0001–0006) and indexer stages 1–7 except LLM confirmation of relations (`src/stc/indexer/`: application detection, hygiene/secrets, file registry, tree-sitter chunking and symbols, signals and static relations, embeddings) and per-application catalogs (`src/stc/catalog/`: context, LLM generation with verified evidence, markdown with manual corrections, plus the deterministic global map in `globalmap.py`) and the query engine (`src/stc/query/`: hybrid search, grep, symbols, catalogs, map, dependencies, file reading), the MCP server (`src/stc/mcp_server.py`) and the chat backend (`src/stc/chat/` agent with verified citations, `src/stc/api/chat.py` conversations + SSE): `pyproject.toml`, package `stc` in `src/` (CLI, settings, `/api/health`), tests, `Dockerfile`, `docker-compose.yml` (`db` + `api`), and an Angular app shell in `frontend/` (Tailwind with the ui-spec tokens, SpartanNG helm (button only), Lucide icons, light/dark toggle, Transloco `en`, Vitest; placeholder page only). The LLM confirmation of relations, the chat UI (Angular) and the LLM confirmation of relations are **not implemented yet**; the stack in `docs/tech-stack.md` is still a proposal beyond the skeleton.
+Backend skeleton, OpenAI provider adapters (`src/stc/providers/`, tested against mocked HTTP only until `stc check-providers` is run with a real key), the database layer (`src/stc/db/`: migration runner and schema 0001–0006) and indexer stages 1–7 except LLM confirmation of relations (`src/stc/indexer/`: application detection, hygiene/secrets, file registry, tree-sitter chunking and symbols, signals and static relations, embeddings) and per-application catalogs (`src/stc/catalog/`: context, LLM generation with verified evidence, markdown with manual corrections, plus the deterministic global map in `globalmap.py`) and the query engine (`src/stc/query/`: hybrid search, grep, symbols, catalogs, map, dependencies, file reading), the MCP server (`src/stc/mcp_server.py`) and the chat backend (`src/stc/chat/` agent with verified citations, `src/stc/api/chat.py` conversations + SSE): `pyproject.toml`, package `stc` in `src/` (CLI, settings, `/api/health`), tests, `Dockerfile`, `docker-compose.yml` (`db` + `api`), and the chat UI in `frontend/` (Angular: conversations, scope and profile, streamed answers with tool steps, verified citations that open the cited code, feedback; Tailwind with the ui-spec tokens, SpartanNG helm (button, textarea, alert), marked + DOMPurify, Lucide icons, light/dark toggle, Transloco `en`, Vitest). The LLM confirmation of relations, the LLM confirmation of relations, `stc evaluate`, `reindex`/`status`, and the Docker `migrate`/`mcp`/`web` services are **not implemented yet**; the stack in `docs/tech-stack.md` is still a proposal beyond the skeleton.
 
 Main branch: `develop` (GitHub remote `jnascimentogcc/stc`).
 
@@ -44,7 +44,7 @@ Frontend, from `frontend/` (npm, Angular CLI, Vitest):
 
 ```bash
 npm install
-npm start                                 # dev server on :4200
+npm start                                 # dev server on :4200 (proxies /api to :8000; run the API with uvicorn)
 npm run build
 npm test -- --no-watch                    # all tests
 npm test -- --no-watch --include src/app/app.spec.ts   # a single spec file
@@ -53,7 +53,7 @@ npx prettier --check "src/**/*.{ts,html,css}"
 
 `src/styles/tokens.css` is a copy of the normative tokens in `docs/ui-spec.md` §3.2; keep them in sync. `src/styles/spartan-theme.css` aliases them to the semantic names helm components expect (note: helm `primary` = ui-spec `--accent`; helm `accent` = `--accent-soft`). Dark theme is `[data-theme="dark"]`, toggled by `ThemeService`. Translations live in `public/i18n/<lang>.json`.
 
-SpartanNG components are generated into `src/app/ui/` (config in `components.json`, import alias `@spartan-ng/helm/*`). Add one with `npx ng g @spartan-ng/cli:ui <name> --defaults </dev/null`. Icons: `@ng-icons/lucide` via `provideIcons`.
+SpartanNG components are generated into `src/app/ui/` (config in `components.json`, import alias `@spartan-ng/helm/*`). Add one with `npx ng g @spartan-ng/cli:ui <name> --defaults </dev/null` (it also writes a `.nx` cache, which is git-ignored). Component specs use `provideTestTransloco()` from `src/app/testing.ts`, which loads the real `en.json`, so a missing translation key fails a test. Icons: `@ng-icons/lucide` via `provideIcons`.
 
 ## Language
 

@@ -1,0 +1,95 @@
+<ng-container *transloco="let t">
+  <div
+    class="relative mx-auto flex"
+    style="max-width: var(--content-max); height: calc(100dvh - var(--header-height))"
+  >
+    <aside
+      id="conversations"
+      class="shrink-0 border-r border-border bg-background p-3 md:static md:block md:w-72"
+      [class.hidden]="!drawerOpen()"
+      [class.fixed]="drawerOpen()"
+      [class.inset-x-0]="drawerOpen()"
+      [class.bottom-0]="drawerOpen()"
+      [class.z-20]="drawerOpen()"
+      [style.top]="drawerOpen() ? 'var(--header-height)' : null"
+    >
+      <app-conversation-list (navigated)="closeDrawer()" />
+    </aside>
+
+    <section class="flex min-w-0 flex-1 flex-col" [attr.aria-label]="t('chat.title')">
+      <div class="flex items-center gap-2 border-b border-border px-4 py-2 sm:px-6">
+        <button
+          hlmBtn
+          variant="ghost"
+          size="icon"
+          class="md:hidden"
+          type="button"
+          [attr.aria-label]="t('chat.conversations')"
+          aria-controls="conversations"
+          [attr.aria-expanded]="drawerOpen()"
+          (click)="drawerOpen.set(!drawerOpen())"
+        >
+          <ng-icon name="lucideMenu" aria-hidden="true" />
+        </button>
+        <details class="min-w-0 flex-1">
+          <summary class="min-h-8 cursor-pointer select-none py-1 text-text-2">
+            <span class="font-medium text-foreground">{{
+              store.current()?.title ?? t('chat.newConversation')
+            }}</span>
+            ·
+            {{ store.scope() === null ? t('chat.allApplications') : store.scope()!.join(', ') }}
+            · {{ t('chat.profile_' + store.profile()) }}
+          </summary>
+          <div class="pb-2 pt-3">
+            <app-scope-bar />
+          </div>
+        </details>
+      </div>
+
+      <div
+        #scroller
+        class="flex-1 overflow-y-auto px-4 py-4 sm:px-6"
+        tabindex="0"
+        role="log"
+        [attr.aria-label]="t('chat.messages')"
+        aria-live="off"
+        (scroll)="onScroll()"
+      >
+        @if (store.loadingConversation()) {
+          <p class="text-text-3" role="status">{{ t('chat.loading') }}</p>
+        } @else if (store.conversationError() && store.messages().length === 0 && !store.turn()) {
+          <p class="rounded-md border border-danger-border bg-danger-bg p-3" role="alert">
+            {{ store.conversationError() }}
+          </p>
+        } @else if (store.messages().length === 0 && !store.turn()) {
+          <div class="mx-auto max-w-xl py-10 text-center">
+            <h1 class="text-xl font-medium">{{ t('chat.emptyTitle') }}</h1>
+            <p class="mt-2 text-text-2">{{ t('chat.emptyBody') }}</p>
+          </div>
+        } @else {
+          <ol class="mx-auto flex max-w-3xl flex-col gap-4">
+            @for (message of store.messages(); track message.id) {
+              <li><app-message-view [message]="message" /></li>
+            }
+            @if (store.turn(); as turn) {
+              <li><app-live-turn [turn]="turn" /></li>
+            }
+          </ol>
+        }
+      </div>
+
+      <p class="sr-only" role="status">{{ announcement() }}</p>
+
+      <div class="border-t border-border bg-background px-4 py-3 sm:px-6">
+        <div class="mx-auto max-w-3xl">
+          @if (store.conversationError() && store.messages().length > 0) {
+            <p class="mb-2 rounded-md border border-danger-border bg-danger-bg p-2" role="alert">
+              {{ store.conversationError() }}
+            </p>
+          }
+          <app-composer (sent)="afterSend()" />
+        </div>
+      </div>
+    </section>
+  </div>
+</ng-container>

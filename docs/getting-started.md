@@ -173,7 +173,25 @@ curl -N -X POST localhost:8000/api/conversations/<id>/messages -H 'content-type:
 
 The second call streams Server-Sent Events (`tool_call`, `tool_result`, `text`, `done`).
 
-## 11. Use it from Claude (MCP)
+## 11. Use the chat in the browser
+
+Start the API and the web app, each in its own terminal (the API needs `STC_LLM_CHAT_MODEL` and,
+for reasoning models, `STC_LLM_CHAT_REASONING_EFFORT=none`, as in step 10):
+
+```bash
+uv run uvicorn stc.api.app:app --port 8000
+```
+```bash
+cd frontend && npm install && npm start
+```
+
+Open <http://localhost:4200>. Ask "Which applications call demo-api, and where?": the steps the
+agent takes appear while it works, then the answer. Click a source to see the cited lines;
+sources marked *unverified* did not match anything the tools returned, so check them yourself.
+Use *Scope* to limit a conversation to some applications and *Answer style* for business
+language. The theme follows your system and can be toggled in the header.
+
+## 12. Use it from Claude (MCP)
 
 The MCP server gives a model the same tools you just tried. For Claude Code, from any folder
 (replace the path with your clone; `uv run --directory` makes `.env` found):
@@ -200,7 +218,7 @@ Then ask, for example, "Which applications call demo-api, and where?". The model
 `STC_MCP_TOKEN` and run `uv run stc serve-mcp --transport http`; clients send
 `Authorization: Bearer <token>` to `http://host:8765/mcp`.
 
-## 12. Check the result in the database
+## 13. Check the result in the database
 
 ```bash
 docker exec stc-dev-db psql -U postgres -d stc -c "select provider, model, vector_dims(embedding) as dims, count(*) from chunk_embeddings group by 1,2,3"
@@ -212,7 +230,7 @@ Expect one row: your provider and model, `1536`, and `10`. To see how the code w
 docker exec stc-dev-db psql -U postgres -d stc -c "select f.path, c.kind, c.name, c.start_line, c.end_line from chunks c join files f on f.id = c.file_id order by f.path, c.start_line"
 ```
 
-## 13. Clean up
+## 14. Clean up
 
 ```bash
 docker rm -f stc-dev-db

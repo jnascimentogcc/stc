@@ -7,13 +7,16 @@
     "noFallthroughCasesInSwitch": true,
     "skipLibCheck": true,
     "isolatedModules": true,
+    "resolveJsonModule": true,
     "experimentalDecorators": true,
     "importHelpers": true,
     "target": "ES2022",
     "module": "preserve",
     "paths": {
       "@spartan-ng/helm/button": ["./src/app/ui/button/src/index.ts"],
-      "@spartan-ng/helm/utils": ["./src/app/ui/utils/src/index.ts"]
+      "@spartan-ng/helm/utils": ["./src/app/ui/utils/src/index.ts"],
+      "@spartan-ng/helm/textarea": ["./src/app/ui/textarea/src/index.ts"],
+      "@spartan-ng/helm/alert": ["./src/app/ui/alert/src/index.ts"]
     }
   },
   "angularCompilerOptions": {

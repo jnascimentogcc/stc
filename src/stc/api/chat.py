@@ -19,8 +19,9 @@ from pydantic import BaseModel, Field
 from stc.chat import store
 from stc.chat.agent import run_agent
 from stc.config import Settings
-from stc.mcp_server import build_server
+from stc.mcp_server import build_server, to_data
 from stc.providers import LLMClient, Message, ProviderError, build_llm_client
+from stc.query.engine import QueryEngine
 from stc.query.models import QueryError
 from stc.query.search import QueryEmbedder
 
@@ -111,6 +112,23 @@ def build_chat_router(
             return [{"name": n, "has_catalog": bool(c)} for n, c in rows]
 
         return await db(query)
+
+    @router.get("/files/slice")
+    async def file_slice(
+        application: str,
+        path: str,
+        start_line: Annotated[int, Query(ge=1)] = 1,
+        end_line: Annotated[int | None, Query(ge=1)] = None,
+    ) -> dict[str, Any]:
+        """Lines of an indexed file, to show the code behind a citation. Secret and excluded
+        files are refused, like in every other read."""
+
+        def read(conn: psycopg.Connection) -> dict[str, Any]:
+            engine = QueryEngine(conn, root=settings.root, catalogs=settings.catalogs)
+            piece = engine.read_file(application, path, start_line=start_line, end_line=end_line)
+            return to_data(piece)  # type: ignore[no-any-return]
+
+        return await db(read)
 
     @router.post("/conversations", status_code=201)
     async def create_conversation(body: ConversationCreate) -> dict[str, Any]:

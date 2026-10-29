@@ -378,6 +378,39 @@ def test_ask_reports_provider_errors_and_missing_pieces(settings: Settings) -> N
     assert refused.status_code == 503 and "STC_LLM_CHAT_MODEL" in refused.json()["detail"]
 
 
+def test_file_slice_endpoint_returns_code_and_refuses_secrets(settings: Settings) -> None:
+    client = make_client(settings, ScriptedLLM())
+    ok = client.get(
+        "/api/files/slice",
+        params={"application": "svc", "path": "billing.py", "start_line": 2, "end_line": 2},
+    )
+    assert ok.status_code == 200
+    body = ok.json()
+    assert (
+        body["text"] == "    return 'payment ok'" and body["source"]["ref"] == "svc/billing.py:2-2"
+    )
+    forbidden = client.get(
+        "/api/files/slice", params={"application": "svc", "path": "credentials.json"}
+    )
+    assert forbidden.status_code == 403
+    assert (
+        client.get("/api/files/slice", params={"application": "ghost", "path": "x"}).status_code
+        == 422
+    )
+    assert (
+        client.get(
+            "/api/files/slice", params={"application": "svc", "path": "missing.py"}
+        ).status_code
+        == 404
+    )
+    assert (
+        client.get(
+            "/api/files/slice", params={"application": "svc", "path": "billing.py", "start_line": 0}
+        ).status_code
+        == 422
+    )
+
+
 def test_feedback_on_an_answer(settings: Settings) -> None:
     client = make_client(settings, ScriptedLLM(say("An answer.")))
     cid = client.post("/api/conversations", json={}).json()["id"]

@@ -1,39 +1,24 @@
 import { TestBed } from '@angular/core/testing';
-import { provideTransloco, TranslocoLoader } from '@jsverse/transloco';
 import { provideRouter } from '@angular/router';
-import { of } from 'rxjs';
+import { provideTestTransloco } from './testing';
 import { App } from './app';
-
-class TestLoader implements TranslocoLoader {
-  getTranslation() {
-    return of({
-      app: { name: 'STC', tagline: 'tagline', placeholder: 'placeholder', toggleTheme: 'toggle' },
-    });
-  }
-}
 
 describe('App', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [App],
-      providers: [
-        provideRouter([]),
-        provideTransloco({
-          config: { availableLangs: ['en'], defaultLang: 'en' },
-          loader: TestLoader,
-        }),
-      ],
+      providers: [provideRouter([]), provideTestTransloco()],
     }).compileComponents();
   });
 
-  it('renders the app name and placeholder', async () => {
+  it('renders the app name, the tagline and an accessible theme toggle', async () => {
     const fixture = TestBed.createComponent(App);
     await fixture.whenStable();
-    const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
-    expect(text).toContain('STC');
-    expect(text).toContain('placeholder');
-    expect(
-      (fixture.nativeElement as HTMLElement).querySelector('button')?.getAttribute('aria-label'),
-    ).toBe('toggle');
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.textContent).toContain('STC');
+    expect(root.textContent).toContain('Talk is cheap. Show me the code.');
+    expect(root.querySelector('button')?.getAttribute('aria-label')).toBe(
+      'Toggle light/dark theme',
+    );
   });
 });
