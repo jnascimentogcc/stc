@@ -149,7 +149,31 @@ The last one must be refused (`forbidden`): the file holds a fake secret. `searc
 question with the embeddings provider (a tiny call) and combines it with text and name matches;
 without embeddings in the database it says so and uses text only.
 
-## 10. Use it from Claude (MCP)
+## 10. Ask a question, as the chat does
+
+Set `STC_LLM_CHAT_MODEL` in `.env` (it can be the same model as the catalog one). If it is a
+reasoning model, also set `STC_LLM_CHAT_REASONING_EFFORT=none`: such models refuse tool calls on
+the Chat Completions API otherwise (HTTP 400 mentioning `reasoning_effort`). Then:
+
+```bash
+uv run stc ask "Which applications call demo-api, and where?"
+```
+
+The tool calls the model makes appear on stderr; the answer is printed with citations, and a
+`warning:` line lists any citation that could not be matched to evidence retrieved in that turn.
+Add `--app demo-web` to restrict the question to one application, or `--profile functional` for
+an answer in business language.
+
+The same agent is behind the HTTP API (`uv run uvicorn stc.api.app:app`):
+
+```bash
+curl -s -X POST localhost:8000/api/conversations -H 'content-type: application/json' -d '{}'
+curl -N -X POST localhost:8000/api/conversations/<id>/messages -H 'content-type: application/json' -d '{"content": "What does demo-api do?"}'
+```
+
+The second call streams Server-Sent Events (`tool_call`, `tool_result`, `text`, `done`).
+
+## 11. Use it from Claude (MCP)
 
 The MCP server gives a model the same tools you just tried. For Claude Code, from any folder
 (replace the path with your clone; `uv run --directory` makes `.env` found):
@@ -176,7 +200,7 @@ Then ask, for example, "Which applications call demo-api, and where?". The model
 `STC_MCP_TOKEN` and run `uv run stc serve-mcp --transport http`; clients send
 `Authorization: Bearer <token>` to `http://host:8765/mcp`.
 
-## 11. Check the result in the database
+## 12. Check the result in the database
 
 ```bash
 docker exec stc-dev-db psql -U postgres -d stc -c "select provider, model, vector_dims(embedding) as dims, count(*) from chunk_embeddings group by 1,2,3"
@@ -188,7 +212,7 @@ Expect one row: your provider and model, `1536`, and `10`. To see how the code w
 docker exec stc-dev-db psql -U postgres -d stc -c "select f.path, c.kind, c.name, c.start_line, c.end_line from chunks c join files f on f.id = c.file_id order by f.path, c.start_line"
 ```
 
-## 12. Clean up
+## 13. Clean up
 
 ```bash
 docker rm -f stc-dev-db

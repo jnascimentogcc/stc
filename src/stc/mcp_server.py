@@ -74,6 +74,7 @@ def to_data(value: Any) -> Any:
 def build_server(
     settings: Settings,
     embedder_factory: Callable[[Settings], QueryEmbedder | None] = build_query_embedder,
+    scope: list[str] | None = None,
 ) -> MCPServer:
     server = MCPServer(
         "stc",
@@ -81,6 +82,7 @@ def build_server(
         description="Query undocumented applications from their source code.",
         instructions=INSTRUCTIONS,
         version=__version__,
+        log_level="WARNING",  # INFO would print every HTTP request of the provider SDKs
     )
     embedder = embedder_factory(settings)
 
@@ -92,7 +94,11 @@ def build_server(
                 raise QueryError("unavailable", "The index database is not configured.")
             with psycopg.connect(settings.db_url, autocommit=True) as conn:
                 engine = QueryEngine(
-                    conn, root=settings.root, catalogs=settings.catalogs, embedder=embedder
+                    conn,
+                    root=settings.root,
+                    catalogs=settings.catalogs,
+                    embedder=embedder,
+                    scope=scope,
                 )
                 return call(engine)
 
@@ -325,6 +331,8 @@ def build_server(
         parts += [f"## {key}\n\n{body}" for key, body in view.sections.items()]
         return "\n\n".join(parts)
 
+    if scope is not None:
+        server.remove_tool("get_global_map")  # it spans every application
     return server
 
 

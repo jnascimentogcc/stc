@@ -58,6 +58,7 @@ class OpenAILLM:
         limiter: RateLimiter | None = None,
         temperature: float | None = None,
         max_output_tokens: int | None = None,
+        reasoning_effort: str | None = None,
         max_retries: int = 2,
         timeout: float = 120.0,
     ) -> None:
@@ -68,6 +69,7 @@ class OpenAILLM:
         self._limiter = limiter
         self._temperature = temperature
         self._max_output_tokens = max_output_tokens
+        self._reasoning_effort = reasoning_effort
 
     async def complete(
         self,
@@ -146,6 +148,8 @@ class OpenAILLM:
             kwargs["temperature"] = self._temperature
         if self._max_output_tokens is not None:
             kwargs["max_completion_tokens"] = self._max_output_tokens
+        if self._reasoning_effort is not None:
+            kwargs["reasoning_effort"] = self._reasoning_effort
         return kwargs
 
 

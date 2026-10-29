@@ -1,6 +1,7 @@
 """`stc` command line. Commands not yet implemented fail with a clear message."""
 
 import asyncio
+import json
 from pathlib import Path
 from typing import Annotated, NoReturn
 
@@ -430,6 +431,65 @@ def global_map() -> None:
         typer.echo(f"Database error: {exc}", err=True)
         raise typer.Exit(code=1) from exc
     typer.echo(f"Wrote {path}")
+
+
+@app.command()
+def ask(
+    question: Annotated[str, typer.Argument(help="Your question about the applications.")],
+    app_scope: Annotated[
+        list[str] | None, typer.Option("--app", help="Restrict to this application (repeatable).")
+    ] = None,
+    profile: Annotated[str, typer.Option(help="technical or functional.")] = "technical",
+) -> None:
+    """Ask one question, as the chat would (not saved). Tool calls go to stderr."""
+    from stc.chat.agent import run_agent
+    from stc.chat.prompt import PROFILES
+    from stc.mcp_server import build_server
+
+    settings = get_settings()
+    if settings.db_url is None:
+        typer.echo("STC_DB_URL is not set.", err=True)
+        raise typer.Exit(code=2)
+    if profile not in PROFILES:
+        typer.echo(f"--profile must be one of: {', '.join(PROFILES)}.", err=True)
+        raise typer.Exit(code=2)
+    try:
+        llm = build_llm_client(settings, "chat")
+    except ProviderError as exc:
+        typer.echo(f"The chat model is not available: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    server = build_server(settings, scope=app_scope)
+
+    async def run() -> dict[str, object] | None:
+        final: dict[str, object] | None = None
+        async for event in run_agent(
+            llm,
+            server,
+            history=[],
+            question=question,
+            profile=profile,
+            language=settings.language,
+            scope=app_scope,
+        ):
+            if event.type == "tool_call":
+                typer.echo(
+                    f"> {event.data['name']} {json.dumps(event.data['arguments'])}", err=True
+                )
+            elif event.type == "tool_result":
+                typer.echo(f"  {event.data['summary']}", err=True)
+            elif event.type == "error":
+                typer.echo(f"Error: {event.data['message']}", err=True)
+                return None
+            elif event.type == "done":
+                final = event.data
+        return final
+
+    done = asyncio.run(run())
+    if done is None:
+        raise typer.Exit(code=1)
+    typer.echo(str(done["answer"]))
+    for warning in done["warnings"]:  # type: ignore[attr-defined]
+        typer.echo(f"warning: {warning}", err=True)
 
 
 @app.command()

@@ -19,6 +19,11 @@ def build_llm_client(
     limiter from STC_LLM_REQUESTS_PER_MIN."""
     model = settings.llm_catalog_model if purpose == "catalog" else settings.llm_chat_model
     variable = "STC_LLM_CATALOG_MODEL" if purpose == "catalog" else "STC_LLM_CHAT_MODEL"
+    effort = (
+        settings.llm_catalog_reasoning_effort
+        if purpose == "catalog"
+        else settings.llm_chat_reasoning_effort
+    )
     if settings.llm_provider == "openai":
         if not model:
             raise ProviderConfigError("openai", f"{variable} is not set")
@@ -26,6 +31,7 @@ def build_llm_client(
             model=model,
             api_key=_secret(settings.openai_api_key),
             base_url=settings.openai_base_url,
+            reasoning_effort=effort,
             limiter=limiter or RateLimiter(settings.llm_requests_per_min),
         )
     raise ProviderConfigError(

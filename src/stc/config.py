@@ -31,6 +31,11 @@ class Settings(BaseSettings):
     llm_provider: Literal["openai", "anthropic"] = "openai"
     llm_catalog_model: str | None = None
     llm_chat_model: str | None = None
+    # Sent as `reasoning_effort` when set. Reasoning models reject tool calls on the Chat
+    # Completions API unless it is "none" (the chat needs tools); models that do not know the
+    # parameter reject it, so it is not sent by default.
+    llm_chat_reasoning_effort: Literal["none", "minimal", "low", "medium", "high"] | None = None
+    llm_catalog_reasoning_effort: Literal["none", "minimal", "low", "medium", "high"] | None = None
 
     embeddings_provider: Literal["openai", "voyage", "local"] = "openai"
     embeddings_model: str | None = None

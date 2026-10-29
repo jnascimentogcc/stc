@@ -63,11 +63,32 @@ class QueryEngine:
         root: Path | None,
         catalogs: Path,
         embedder: QueryEmbedder | None = None,
+        scope: list[str] | None = None,
     ) -> None:
         self.conn = conn
         self.root = root
         self.catalogs = catalogs
         self.embedder = embedder
+        # A conversation can be restricted to some applications (CHT-06): nothing outside them
+        # can be listed, searched, read or described through this engine.
+        self.scope = scope
+
+    def _applications(self, applications: list[str] | None) -> list[str] | None:
+        if self.scope is None:
+            return applications
+        if not applications:
+            return list(self.scope)
+        for name in applications:
+            self._check(name)
+        return applications
+
+    def _check(self, application: str) -> None:
+        if self.scope is not None and application not in self.scope:
+            raise QueryError(
+                "forbidden",
+                f"{application!r} is outside the scope of this conversation "
+                f"({', '.join(self.scope) or 'no applications'}).",
+            )
 
     # --- applications and knowledge -------------------------------------------------------
 
@@ -85,14 +106,22 @@ class QueryEngine:
             name=name,
             technology=technology,
             related_to=related_to,
+            only=self.scope,
             limit=limit,
             offset=offset,
         )
 
     def get_catalog(self, application: str, sections: list[str] | None = None) -> CatalogView:
+        self._check(application)
         return browse.get_catalog(self.conn, self.catalogs, application, sections)
 
     def get_global_map(self) -> GlobalMapView:
+        if self.scope is not None:
+            raise QueryError(
+                "forbidden",
+                "The global map covers every application and is not available in a scoped "
+                "conversation; use get_dependencies for the applications in scope.",
+            )
         return browse.get_global_map(self.conn, self.catalogs)
 
     def get_dependencies(
@@ -103,12 +132,15 @@ class QueryEngine:
         max_depth: int = 3,
         types: list[str] | None = None,
     ) -> list[Dependency]:
+        self._check(application)
         return browse.get_dependencies(
             self.conn, application, direction=direction, max_depth=max_depth, types=types
         )
 
     def status(self, application: str | None = None) -> IndexStatus:
-        return browse.index_status(self.conn, application)
+        if application:
+            self._check(application)
+        return browse.index_status(self.conn, application, self.scope)
 
     # --- search -----------------------------------------------------------------------------
 
@@ -126,7 +158,7 @@ class QueryEngine:
             self.conn,
             self.embedder,
             query,
-            applications=applications,
+            applications=self._applications(applications),
             languages=languages,
             paths=paths,
             limit=limit,
@@ -142,7 +174,11 @@ class QueryEngine:
         offset: int = 0,
     ) -> Page[CatalogHit]:
         return search.search_catalogs(
-            self.conn, query, applications=applications, limit=limit, offset=offset
+            self.conn,
+            query,
+            applications=self._applications(applications),
+            limit=limit,
+            offset=offset,
         )
 
     def grep(
@@ -162,7 +198,7 @@ class QueryEngine:
             pattern,
             regex=regex,
             case_sensitive=case_sensitive,
-            applications=applications,
+            applications=self._applications(applications),
             languages=languages,
             paths=paths,
             limit=limit,
@@ -188,7 +224,7 @@ class QueryEngine:
             kind=kind,
             exact=exact,
             include_usages=include_usages,
-            applications=applications,
+            applications=self._applications(applications),
             languages=languages,
             paths=paths,
             limit=limit,
@@ -200,6 +236,7 @@ class QueryEngine:
     def read_file(
         self, application: str, path: str, *, start_line: int = 1, end_line: int | None = None
     ) -> FileSlice:
+        self._check(application)
         return browse.read_file(
             self.conn, self.root, application, path, start_line=start_line, end_line=end_line
         )

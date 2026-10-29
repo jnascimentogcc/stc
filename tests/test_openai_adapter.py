@@ -89,6 +89,18 @@ def test_complete_returns_text_usage_and_sends_expected_request() -> None:
     assert "tools" not in body and "response_format" not in body
 
 
+def test_reasoning_effort_is_sent_only_when_configured() -> None:
+    bodies: list[dict[str, object]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        bodies.append(json.loads(request.content))
+        return httpx.Response(200, json=chat_reply("ok"))
+
+    asyncio.run(llm(handler).complete([Message("user", "hi")]))
+    asyncio.run(llm(handler, reasoning_effort="none").complete([Message("user", "hi")]))
+    assert "reasoning_effort" not in bodies[0] and bodies[1]["reasoning_effort"] == "none"
+
+
 def test_tools_are_sent_and_tool_calls_parsed() -> None:
     bodies: list[dict[str, Any]] = []
 

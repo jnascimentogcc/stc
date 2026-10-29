@@ -313,3 +313,7 @@ def test_read_file_refuses_secrets_traversal_and_unknown_files(env) -> None:  # 
     with pytest.raises(QueryError) as unavailable:
         no_root.read_file("svc", "billing.py")
     assert unavailable.value.code == "unavailable"
+    missing_root = QueryEngine(conn, root=Path("/does/not/exist"), catalogs=catalogs)
+    with pytest.raises(QueryError, match="STC_ROOT") as wrong:
+        missing_root.read_file("svc", "billing.py")
+    assert wrong.value.code == "unavailable"

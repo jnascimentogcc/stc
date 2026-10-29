@@ -30,6 +30,15 @@ def test_builds_openai_clients_for_each_purpose() -> None:
     assert (embeddings.model, embeddings.dimensions) == ("emb-model", 1536)
 
 
+def test_reasoning_effort_is_passed_per_purpose() -> None:
+    cfg = settings(
+        openai_api_key="k", llm_catalog_model="c", llm_chat_model="m",
+        llm_chat_reasoning_effort="none",
+    )  # fmt: skip
+    assert build_llm_client(cfg, "chat")._reasoning_effort == "none"  # type: ignore[attr-defined]
+    assert build_llm_client(cfg, "catalog")._reasoning_effort is None  # type: ignore[attr-defined]
+
+
 def test_missing_configuration_names_the_variable() -> None:
     with pytest.raises(ProviderConfigError, match="STC_LLM_CHAT_MODEL"):
         build_llm_client(settings(openai_api_key="k"), "chat")

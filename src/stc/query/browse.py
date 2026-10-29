@@ -37,6 +37,7 @@ def list_applications(
     name: str | None = None,
     technology: str | None = None,
     related_to: str | None = None,
+    only: list[str] | None = None,
     limit: int = 20,
     offset: int = 0,
 ) -> Page[AppSummary]:
@@ -45,6 +46,9 @@ def list_applications(
     limit, offset = page_args(limit, offset)
     clauses: list[str] = []
     params: list[object] = []
+    if only is not None:
+        clauses.append("a.name = ANY(%s)")
+        params.append(only)
     if name:
         clauses.append("a.name ILIKE %s")
         params.append(f"%{name}%")
@@ -238,14 +242,17 @@ def _walk(
     return out
 
 
-def index_status(conn: psycopg.Connection, application: str | None = None) -> IndexStatus:
+def index_status(
+    conn: psycopg.Connection, application: str | None = None, only: list[str] | None = None
+) -> IndexStatus:
     if application:
         require_application(conn, application)
     apps = conn.execute(
         "SELECT a.id, a.name, a.indexed_version, c.status, c.code_version FROM applications a"
         " LEFT JOIN catalogs c ON c.application_id = a.id"
-        " WHERE (%s::text IS NULL OR a.name = %s) ORDER BY a.name",
-        (application, application),
+        " WHERE (%s::text IS NULL OR a.name = %s) AND (%s::text[] IS NULL OR a.name = ANY(%s))"
+        " ORDER BY a.name",
+        (application, application, only, only),
     ).fetchall()
     out = []
     for app_id, name, version, cat_status, cat_version in apps:
@@ -296,6 +303,11 @@ def read_file(
     if root is None:
         raise QueryError(
             "unavailable", "The Root is not configured (STC_ROOT), so files cannot be read."
+        )
+    if not root.is_dir():
+        raise QueryError(
+            "unavailable",
+            f"STC_ROOT ({root}) is not an existing folder: set it to the folder that was indexed.",
         )
     relative = PurePosixPath(path.replace("\\", "/"))
     if relative.is_absolute() or ".." in relative.parts or not relative.parts:
