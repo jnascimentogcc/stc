@@ -58,7 +58,7 @@ Cross-cutting principles:
 
 ## 4. Indexing pipeline
 
-1. **Detection**: walks the Root, applies exclusions and identifies applications through marker files (`package.json`, `pom.xml`, `*.csproj`, `pyproject.toml`, `go.mod`, …), with manual corrections in `stc.toml` (IDX-02, IDX-03).
+1. **Detection**: walks the Root, applies exclusions and identifies applications through marker files (`package.json`, `pom.xml`, `*.csproj`, `pyproject.toml`, `go.mod`, …), with manual corrections in `stc.toml` (IDX-02, IDX-03). A directory with a marker is an application and owns its subtree (nested markers do not split it); workspace roots (npm workspaces, Maven parent POMs, Cargo/Gradle workspaces) are not applications, detection descends into them. `stc.toml` at the Root can rename, include, exclude, merge (`paths = [...]`) and split applications, and add gitignore-style exclusion patterns; see the docstring of `stc/indexer/rootconfig.py`.
 2. **Hygiene**: noise exclusions and secret detection; whatever is excluded is recorded without its value.
 3. **Decomposition**: tree-sitter produces chunks and symbols; files in languages without a grammar enter as text and are flagged (IDX-04).
 4. **Incremental**: SHA-256 per file plus `git diff` between versions; only changed files and affected applications are reprocessed (LCY-01 to LCY-04).

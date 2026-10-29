@@ -1,6 +1,7 @@
-"""`stc` command line. Commands other than `version` are placeholders until implemented."""
+"""`stc` command line. Commands not yet implemented fail with a clear message."""
 
-from typing import NoReturn
+from pathlib import Path
+from typing import Annotated, NoReturn
 
 import psycopg
 import typer
@@ -8,6 +9,9 @@ import typer
 from stc import __version__
 from stc.config import get_settings
 from stc.db.migrate import MigrationError, migrate
+from stc.indexer.pipeline import detect_root, scan_root
+from stc.indexer.registry import sync_registry
+from stc.indexer.rootconfig import ConfigError
 
 app = typer.Typer(no_args_is_help=True, help="STC — Talk is cheap. Show me the code.")
 
@@ -23,10 +27,87 @@ def version() -> None:
     typer.echo(__version__)
 
 
+def _resolve_root(root: Path | None) -> Path:
+    chosen = root or get_settings().root
+    if chosen is None:
+        typer.echo("No Root given: use --root or set STC_ROOT.", err=True)
+        raise typer.Exit(code=2)
+    if not chosen.is_dir():
+        typer.echo(f"Root is not a directory: {chosen}", err=True)
+        raise typer.Exit(code=2)
+    return chosen
+
+
+RootOption = Annotated[Path | None, typer.Option("--root", help="Folder with the applications.")]
+
+
 @app.command()
-def index() -> None:
-    """Index the Root (incremental)."""
-    _not_implemented("index")
+def detect(root: RootOption = None) -> None:
+    """List the applications detected in the Root (no database needed)."""
+    root = _resolve_root(root)
+    try:
+        specs = detect_root(root)
+    except (ConfigError, ValueError) as exc:
+        typer.echo(f"Detection failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    for spec in specs:
+        origin = "manual" if spec.detected_by == "manual" else ", ".join(spec.markers)
+        typer.echo(f"{spec.name}	{spec.base.as_posix()}	{origin}")
+    typer.echo(f"{len(specs)} application(s) detected.", err=True)
+
+
+@app.command()
+def index(
+    root: RootOption = None,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Scan without touching the DB.")
+    ] = False,
+    prune: Annotated[
+        bool, typer.Option("--prune", help="Remove applications that are no longer in the Root.")
+    ] = False,
+) -> None:
+    """Detect applications, apply hygiene and register files (later stages are not built yet)."""
+    root = _resolve_root(root)
+    try:
+        scanned = scan_root(root)
+    except (ConfigError, ValueError) as exc:
+        typer.echo(f"Indexing failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    if not scanned:
+        typer.echo("No applications detected; nothing to do.", err=True)
+        raise typer.Exit(code=1)
+    for app_scan in scanned:
+        counts = ", ".join(
+            f"{app_scan.count(s)} {s}"
+            for s in ("indexed", "unsupported", "excluded", "secret", "error")
+        )
+        typer.echo(f"{app_scan.spec.name}: {counts}")
+        for f in app_scan.files:
+            if f.status in ("secret", "error"):
+                typer.echo(f"  {f.status}: {f.path} ({f.exclusion_reason})")
+    if dry_run:
+        return
+    settings = get_settings()
+    if settings.db_url is None:
+        typer.echo("STC_DB_URL is not set (use --dry-run to scan without a database).", err=True)
+        raise typer.Exit(code=2)
+    try:
+        with psycopg.connect(settings.db_url) as conn:
+            result = sync_registry(conn, scanned, prune=prune)
+    except psycopg.Error as exc:
+        typer.echo(f"Database error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    changed = [a for a in result.applications if a.changed]
+    typer.echo(
+        f"Registry: {len(result.apps_added)} application(s) added, "
+        f"{len(changed)} with file changes, {len(result.apps_removed)} removed."
+    )
+    if result.apps_missing:
+        typer.echo(
+            "Not found in the Root (kept; use --prune to remove): "
+            + ", ".join(result.apps_missing),
+            err=True,
+        )
 
 
 @app.command()

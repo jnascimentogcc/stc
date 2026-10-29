@@ -13,5 +13,5 @@ def test_version() -> None:
 
 
 def test_unimplemented_command_fails_clearly() -> None:
-    result = runner.invoke(app, ["index"])
+    result = runner.invoke(app, ["reindex"])
     assert result.exit_code == 1
