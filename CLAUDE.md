@@ -18,6 +18,7 @@ uv run pytest                             # all tests
 uv run pytest tests/test_cli.py::test_version   # a single test
 uv run ruff check . && uv run ruff format --check .
 uv run mypy                               # strict
+uv run stc --env-file .env.other <cmd>    # any command with another settings file (also STC_ENV_FILE)
 uv run stc --help                         # CLI (`version`, `migrate-db`, `detect`, `index`, `relations`, `embed`, `catalog`, `map`, `query`, `serve-mcp`, `ask`, `evaluate`, `reindex`, `status`, `corrections`, `check-providers` work; the rest are stubs)
 uv run stc migrate-db                     # needs STC_DB_MIGRATION_URL (+ STC_APP_PASSWORD for the stc_app role)
 uv run stc detect --root <dir>            # list detected applications (no DB)
@@ -86,6 +87,7 @@ The project is **open source under the MIT license** (`LICENSE`, copyright Jorge
 - `docs/functional-spec.md` — functional requirements with IDs (IDX-*, CAT-*, LCY-*, QRY-*, CHT-*, MCP-*, XCT-*) and acceptance criteria. Cite these IDs when implementing/testing.
 - `docs/tech-stack.md` — proposed stack, indexing pipeline, data model, environment variables (`STC_*`), decisions and open items.
 - `docs/getting-started.md` — step-by-step run of the pipeline on `examples/demo-root/` (two tiny fake applications, safe to send to an LLM provider).
+- `docs/real-projects.md` — checklist for the first run on real code, in a separate setup (`stc --env-file .env.real ...`).
 - `docs/ui-spec.md` — global design system (tokens, components, accessibility, i18n, themes). Takes precedence over feature specs on global UI decisions. Exact dependency versions live in `pyproject.toml`/`package.json`, never in the docs.
 
 ## Architecture (overview)

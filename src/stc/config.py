@@ -1,5 +1,6 @@
 """Runtime configuration, read from `STC_*` environment variables (and `.env`)."""
 
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -55,4 +56,6 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    """Settings from the environment and from `STC_ENV_FILE` (default `.env`), which lets one
+    checkout work with several setups, e.g. `stc --env-file .env.real index`."""
+    return Settings(_env_file=os.environ.get("STC_ENV_FILE") or ".env")

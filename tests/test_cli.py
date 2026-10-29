@@ -36,3 +36,19 @@ def test_catalog_needs_exactly_one_of_application_or_all() -> None:
     for args in (["catalog"], ["catalog", "svc", "--all"]):
         result = runner.invoke(app, args)
         assert result.exit_code == 2
+
+
+def test_env_file_option_selects_the_settings_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("STC_ENV_FILE", raising=False)
+    missing = runner.invoke(app, ["--env-file", "nope.env", "version"])
+    assert missing.exit_code == 2 and "does not exist" in missing.output
+
+    monkeypatch.delenv("STC_DB_URL", raising=False)
+    (tmp_path / "other.env").write_text("STC_LANGUAGE=es\n", encoding="utf-8")  # no database
+    ok = runner.invoke(app, ["--env-file", "other.env", "status"])
+    assert ok.exit_code == 2 and "STC_DB_URL is not set" in ok.output
+    monkeypatch.delenv("STC_ENV_FILE", raising=False)
+    get_settings.cache_clear()

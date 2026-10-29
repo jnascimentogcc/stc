@@ -335,5 +335,6 @@ docker compose down -v        # the Compose setup of step 16 (-v also deletes it
 | `STC_DB_MIGRATION_URL is not set` / `STC_DB_URL is not set` | `.env` is missing or you are not in the repository root. |
 | `password authentication failed for user "stc_app"` | `STC_APP_PASSWORD` in `.env` differs from the one used when `migrate-db` ran; run `migrate-db` again. |
 | `connection refused` | The container is not running yet or the port in the URLs is wrong. |
+| Every command takes minutes before failing or working | The database port is published on `127.0.0.1` only and the URL says `localhost`: on Windows `localhost` is tried on IPv6 first and times out. Use `127.0.0.1` in the URLs. |
 | `Embeddings skipped: openai: OPENAI_API_KEY is not set` | Key (or `STC_EMBEDDINGS_MODEL`) missing in `.env`. |
 | `expected 1536 dimensions, got N` | The embeddings model does not return 1536 dimensions; use a `text-embedding-3-*` model or set `STC_EMBEDDINGS_DIMENSIONS=1536`. |

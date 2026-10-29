@@ -15,7 +15,7 @@ from urllib.parse import urlsplit
 from stc.indexer.manifests import is_manifest, manifest_signals
 from stc.indexer.signal_types import Signal
 
-EXTRACTOR_VERSION = 1
+EXTRACTOR_VERSION = 2  # 2: Spring ${property} kept in endpoint keys; test files ignored
 MAX_LINE = 2_000  # longer lines (minified code) are cut before matching
 
 # Languages whose files can contain signals; docs (markdown, text) are left out as noisy.
@@ -52,13 +52,29 @@ _PARAM = re.compile(r"\$\{[^}]*\}|\{\{[^}]*\}\}|\{[^/}]*\}|<[^/>]*>|\[[^/\]]*\]|
 _DJANGO_GROUP = re.compile(r"\(\?P<\w+>[^)]*\)|\([^)]*\)")
 
 
-def normalize_path(raw: str) -> str:
+_PROPERTY = re.compile(r"\$\{([A-Za-z][\w.\-]*)(?::[^}]*)?\}")
+# Private-use characters mark a property while the rest of the path is normalized.
+_MARK_OPEN, _MARK_CLOSE = "\ue000", "\ue001"
+_STASHED = re.compile(_MARK_OPEN + r"(\d+)" + _MARK_CLOSE)
+
+
+def normalize_path(raw: str, *, keep_properties: bool = False) -> str:
     """`/Orders/{id}/`, `/orders/:id`, `/orders/<int:pk>` and `/orders/42` all become
-    `/orders/{}`."""
+    `/orders/{}`. With `keep_properties` a Spring `${api.prefix}` stays as it is (lower case) so
+    that it can be given its value from the application's configuration later."""
     path = raw.split("?")[0].split("#")[0].strip()
+    kept: list[str] = []
+    if keep_properties:
+
+        def stash(match: re.Match[str]) -> str:
+            kept.append(match.group(0).lower())
+            return f"{_MARK_OPEN}{len(kept) - 1}{_MARK_CLOSE}"
+
+        path = _PROPERTY.sub(stash, path)
     path = _PARAM.sub("{}", path)
     segments = ["{}" if s.isdigit() else s.lower() for s in path.split("/") if s]
-    return "/" + "/".join(segments)
+    result = "/" + "/".join(segments)
+    return _STASHED.sub(lambda m: kept[int(m.group(1))], result) if kept else result
 
 
 def _join(*parts: str) -> str:
@@ -75,10 +91,27 @@ def _django(raw: str) -> str:
 # --------------------------------------------------------------------------------------------
 
 
+_TEST_DIRECTORIES = frozenset(
+    {"test", "tests", "__tests__", "spec", "specs", "e2e", "cypress", "testing", "fixtures",
+     "__mocks__", "mocks", "testdata"}
+)  # fmt: skip
+_TEST_FILE = re.compile(
+    r"(?:\.(?:test|spec|e2e)\.[\w]+$|^test_[\w.]+$|_test\.\w+$|(?:Test|Tests|IT|ITCase)\.\w+$)"
+)
+
+
+def is_test_path(path: PurePosixPath) -> bool:
+    """Tests call and serve things that no real application depends on (a test that calls its own
+    API, a mock server), so they give no signals."""
+    return bool(_TEST_DIRECTORIES & {p.lower() for p in path.parts[:-1]}) or bool(
+        _TEST_FILE.search(path.name)
+    )
+
+
 def extract_signals(path: PurePosixPath, text: str, language: str | None) -> list[Signal]:
     if is_manifest(path):
         return manifest_signals(path, text)
-    if language not in SIGNAL_LANGUAGES:
+    if language not in SIGNAL_LANGUAGES or is_test_path(path):
         return []
     lines = [line[:MAX_LINE] for line in text.replace("\r\n", "\n").split("\n")]
     found: list[Signal] = []
@@ -100,8 +133,8 @@ def _dedupe(signals: list[Signal]) -> list[Signal]:
     return unique
 
 
-def _provides(line: int, method: str, raw_path: str) -> Signal:
-    key = normalize_path(raw_path)
+def _provides(line: int, method: str, raw_path: str, *, properties: bool = False) -> Signal:
+    key = normalize_path(raw_path, keep_properties=properties)
     return Signal("http", "provides", key, None, f"{method.upper()} {raw_path}", line, line)
 
 
@@ -221,13 +254,14 @@ def _jvm_line(lines: list[str], index: int, number: int, language: str | None) -
     if not spring:
         spring_req = _SPRING_REQ.search(line)
         if spring_req and not _class_ahead(lines, index):
-            return [_provides(number, "ANY", _jvm_prefix(lines, index) + (spring_req[1] or ""))]
+            path = _jvm_prefix(lines, index) + (spring_req[1] or "")
+            return [_provides(number, "ANY", path, properties=True)]
         jaxrs = _JAXRS.search(line)
         if jaxrs and not _class_ahead(lines, index):
-            return [_provides(number, "ANY", _jvm_prefix(lines, index) + jaxrs[1])]
+            return [_provides(number, "ANY", _jvm_prefix(lines, index) + jaxrs[1], properties=True)]
         return []
     path = _jvm_prefix(lines, index) + (spring[2] or "")
-    return [_provides(number, spring[1], path)]
+    return [_provides(number, spring[1], path, properties=True)]
 
 
 def _jvm_prefix(lines: list[str], index: int) -> str:
@@ -291,6 +325,7 @@ _IGNORED_URL_HOSTS = frozenset(
      "example.com", "www.example.com"}
 )  # fmt: skip
 _PLACEHOLDER_HOST = re.compile(r"[${}%()]")
+_MAPPING_LINE = re.compile(r"@(?:\w*Mapping|Path|Controller|RestController)\b")
 
 
 def _http_consumers(lines: list[str]) -> list[Signal]:
@@ -301,6 +336,8 @@ def _http_consumers(lines: list[str]) -> list[Signal]:
             signal = _url_signal(url.group(0), number)
             if signal:
                 found.append(signal)
+        if _MAPPING_LINE.search(line):
+            continue  # `${property}/path` in a mapping annotation is an endpoint, not a call
         for interp in _INTERPOLATED.finditer(line):
             variable, tail = interp.group(1), interp.group(2)
             env = _ENV_VAR.fullmatch(variable.upper().split(".")[-1])

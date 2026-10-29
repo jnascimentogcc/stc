@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import os
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -51,6 +52,24 @@ from stc.query.models import QueryError
 
 app = typer.Typer(no_args_is_help=True, help="STC — Talk is cheap. Show me the code.")
 app.add_typer(query_app, name="query")
+
+
+@app.callback()
+def main(
+    env_file: Annotated[
+        Path | None,
+        typer.Option(
+            "--env-file",
+            help="Read the settings from this file instead of .env (also STC_ENV_FILE).",
+        ),
+    ] = None,
+) -> None:
+    if env_file is not None:
+        if not env_file.is_file():
+            typer.echo(f"The settings file does not exist: {env_file}", err=True)
+            raise typer.Exit(code=2)
+        os.environ["STC_ENV_FILE"] = str(env_file)
+        get_settings.cache_clear()
 
 
 @app.command()
@@ -376,7 +395,7 @@ def _relations_stage(settings: Settings, root: Path) -> tuple[SignalStats, Relat
         aliases = host_aliases(root)
         with psycopg.connect(settings.db_url) as conn:
             signals = extract_pending(conn, root)
-            relations = rebuild_relations(conn, aliases)
+            relations = rebuild_relations(conn, aliases, root)
     except (ConfigError, ValueError) as exc:
         typer.echo(f"Relations failed: {exc}", err=True)
         raise typer.Exit(code=1) from exc

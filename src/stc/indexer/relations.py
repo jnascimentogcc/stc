@@ -187,14 +187,16 @@ def _http(collector: _Collector, apps: Sequence[AppRef], signals: Sequence[Signa
         if s.kind != "http" or s.role != "consumes":
             continue
         specific_path = bool(s.key) and not is_generic_path(s.key)
-        if s.host:
-            target = names.resolve(s.host)
-            if target is None:
-                continue  # an external or unknown host: not one of our applications
-            via_url = s.detail.startswith("http")
+        via_url = s.detail.startswith("http")
+        target = names.resolve(s.host) if s.host else None
+        if target is not None:
             confidence = "high" if via_url else "medium"
             collector.add(s.application_id, target, "http", _Evidence(confidence, s, s.detail))
+        elif s.host and (via_url or not specific_path):
+            continue  # a host that is not one of our applications (external, or unknown)
         elif specific_path:
+            # No host, or one that only names a configuration variable (`REACT_APP_API_URL`):
+            # the variable says nothing about who serves the path, the path itself may.
             targets, exact = providers_of(s.key, s.application_id)
             if len(targets) == 1:  # several candidates: ambiguous, so no relation
                 collector.add(

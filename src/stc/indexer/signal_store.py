@@ -6,12 +6,13 @@ changed ones updated, vanished ones removed (static relations only; LLM and manu
 """
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 
 import psycopg
 
 from stc.indexer.chunk_store import _read_verified
+from stc.indexer.properties import has_placeholder, load_properties, resolve_placeholders
 from stc.indexer.relations import (
     AppRef,
     RelationDraft,
@@ -90,8 +91,12 @@ def extract_pending(
 
 
 def rebuild_relations(
-    conn: psycopg.Connection, aliases: Mapping[str, Sequence[str]] | None = None
+    conn: psycopg.Connection,
+    aliases: Mapping[str, Sequence[str]] | None = None,
+    root: Path | None = None,
 ) -> RelationStats:
+    """Derive the relations from the stored signals. With the `root`, a `${property}` in the path
+    of an endpoint is given its value from the application's configuration files first."""
     apps = aliases_to_apps(
         [(int(r[0]), str(r[1])) for r in conn.execute("SELECT id, name FROM applications")],
         aliases or {},
@@ -103,6 +108,14 @@ def rebuild_relations(
             " end_line FROM signals"
         )
     ]
+    if root is not None and any(s.kind == "http" and has_placeholder(s.key) for s in signals):
+        properties = load_properties(conn, root)
+        signals = [
+            replace(s, key=resolve_placeholders(s.key, properties.get(s.application_id, {})))
+            if s.kind == "http" and has_placeholder(s.key)
+            else s
+            for s in signals
+        ]
     return sync_relations(conn, derive_relations(apps, signals))
 
 
