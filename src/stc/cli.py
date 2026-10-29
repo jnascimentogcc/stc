@@ -2,9 +2,12 @@
 
 from typing import NoReturn
 
+import psycopg
 import typer
 
 from stc import __version__
+from stc.config import get_settings
+from stc.db.migrate import MigrationError, migrate
 
 app = typer.Typer(no_args_is_help=True, help="STC — Talk is cheap. Show me the code.")
 
@@ -52,8 +55,23 @@ def evaluate() -> None:
 
 @app.command(name="migrate-db")
 def migrate_db() -> None:
-    """Apply database migrations."""
-    _not_implemented("migrate-db")
+    """Apply database migrations and set up the `stc_app` role."""
+    settings = get_settings()
+    if settings.db_migration_url is None:
+        typer.echo("STC_DB_MIGRATION_URL is not set.", err=True)
+        raise typer.Exit(code=2)
+    password = settings.app_password.get_secret_value() if settings.app_password else None
+    try:
+        applied = migrate(settings.db_migration_url, app_password=password)
+    except (MigrationError, psycopg.Error) as exc:
+        typer.echo(f"Migration failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    if not applied:
+        typer.echo("Database is up to date.")
+    for migration in applied:
+        typer.echo(f"Applied {migration.version:04d}_{migration.name}")
+    if password is None:
+        typer.echo("STC_APP_PASSWORD is not set: the stc_app role was not touched.", err=True)
 
 
 @app.command(name="serve-mcp")

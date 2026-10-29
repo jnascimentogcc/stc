@@ -50,9 +50,9 @@ Cross-cutting principles:
 - **pgvector in use**: vectors for code chunks and catalogs (HNSW index). Each vector stores the embedding provider, model and version; changing model implies reindexing.
 - **Lexical search**: `tsvector` (text) and **pg_trgm** (identifiers and name fragments). Hybrid search combines vector + lexical with *reciprocal rank fusion* and reranking (§5).
 - **Relationship graph in tables** (application → application, with type and evidence) queried with recursive CTEs for transitive dependencies (QRY-03). No graph database is used.
-- **Main tables**: `applications`, `files`, `chunks`, `symbols`, `relations`, `catalogs`, `indexing_runs`, `tasks`, `conversations`, `messages`, `feedback`.
+- **Main tables**: `applications`, `files`, `chunks`, `chunk_embeddings`, `symbols`, `relations`, `catalogs`, `catalog_sections`, `catalog_section_embeddings`, `indexing_runs`, `tasks`, `conversations`, `messages`, `feedback` (plus `schema_migrations`). Embeddings are stored at **1536 dimensions** in a separate table per owner; models with a different native size must be configured to output 1536 (OpenAI `text-embedding-3-*` support this), otherwise a new migration and a full reindex are needed.
 - **Two database roles**: the schema owner (migrations) and `stc_app` (API and workers, without owner privileges).
-- **Numbered SQL migrations** in `src/stc/db/migrations/`, applied by `stc migrate-db`. **Driver**: `psycopg 3` (`binary`, `pool`).
+- **Numbered SQL migrations** in `src/stc/db/migrations/`, applied by `stc migrate-db` (forward-only, one transaction per migration, checksum-verified, serialized with an advisory lock). The same command creates or updates the `stc_app` role from `STC_APP_PASSWORD` and grants it data access only (no DDL, no access to `schema_migrations`). **Driver**: `psycopg 3` (`binary`, `pool`).
 - **Catalogs and global map as markdown** in `./catalogs/<application>.md` and `./catalogs/_global-map.md`, in their own Git repository. It is the source of truth: the database only holds the index. Manual corrections live in marked blocks that regeneration preserves (CAT-04, CAT-05).
 - **Volumes**: the Root is mounted read-only; `./catalogs` and `./data` (caches, indexing reports) are writable.
 

@@ -4,7 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -21,6 +21,7 @@ class Settings(BaseSettings):
 
     db_url: str | None = None
     db_migration_url: str | None = None
+    app_password: SecretStr | None = None
 
     llm_provider: Literal["openai", "anthropic"] = "openai"
     llm_catalog_model: str | None = None
