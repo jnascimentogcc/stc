@@ -317,3 +317,40 @@ def test_read_file_refuses_secrets_traversal_and_unknown_files(env) -> None:  # 
     with pytest.raises(QueryError, match="STC_ROOT") as wrong:
         missing_root.read_file("svc", "billing.py")
     assert wrong.value.code == "unavailable"
+
+
+def test_test_files_rank_below_the_code_they_test_but_are_not_hidden(  # type: ignore[no-untyped-def]
+    env,
+) -> None:
+    from stc.query.search import TEST_PENALTY, _demote_tests
+
+    conn, root, _ = env
+    write(root, "svc/tests/test_billing.py", "def test_charge_customer():\n    pass\n")
+    index(conn, root)
+    asyncio.run(embed_pending(conn, KeywordEmbeddings()))
+
+    def chunk(path: str) -> int:
+        row = conn.execute(
+            "SELECT c.id FROM chunks c JOIN files f ON f.id = c.file_id WHERE f.path = %s"
+            " ORDER BY c.id LIMIT 1",
+            (path,),
+        ).fetchone()
+        assert row is not None
+        return int(row[0])
+
+    code, test = chunk("billing.py"), chunk("tests/test_billing.py")
+    scores = {code: 0.030, test: 0.040}  # the test chunk matched better
+    assert _demote_tests(conn, "charge customer payment", scores) == {test}
+    assert scores[test] == pytest.approx(0.040 * TEST_PENALTY) and scores[code] == 0.030
+    assert max(scores, key=lambda i: scores[i]) == code  # now the code comes first
+
+    same = {code: 0.030, test: 0.040}
+    for query in ("tests for charge customer", "the spec of billing", "e2e charge"):
+        assert _demote_tests(conn, query, same) == set() and same[test] == 0.040
+
+    # Through the search: the test file is still there, with a note saying it was demoted.
+    found = engine(env).search_code("charge customer payment", applications=["svc"])
+    assert "tests/test_billing.py" in [h.source.file for h in found.items]
+    assert any("ranked below the code they test" in n for n in found.notes)
+    asked = engine(env).search_code("tests of charge customer", applications=["svc"])
+    assert not any("ranked below" in n for n in asked.notes)

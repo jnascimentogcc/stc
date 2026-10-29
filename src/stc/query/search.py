@@ -7,10 +7,12 @@ are exact. Only chunks of searchable files exist in the index, so secrets can ne
 
 import re
 from collections import defaultdict
+from pathlib import PurePosixPath
 from typing import Protocol
 
 import psycopg
 
+from stc.indexer.signals import is_test_path
 from stc.query.common import (
     LINE_CHARS,
     SEARCHABLE,
@@ -32,6 +34,14 @@ RRF_K = 60
 _WORD = re.compile(r"[A-Za-z0-9_]{2,}")
 _CAMEL = re.compile(r"[A-Z]+(?![a-z])|[A-Z]?[a-z]+|[0-9]+")
 NO_MATCH_NOTE = "No matches. The indexed code may simply not contain this; do not assume it exists."
+TEST_PENALTY = 0.5  # test files keep half of their score
+_ABOUT_TESTS = re.compile(
+    r"\b(?:tests?|testing|specs?|e2e|fixtures?|mocks?|testes?)\b", re.IGNORECASE
+)
+TESTS_NOTE = (
+    "Test files are ranked below the code they test; mention tests in the query to rank them "
+    "like any other file."
+)
 
 
 class QueryEmbedder(Protocol):
@@ -117,6 +127,22 @@ def _name_ids(
     return [int(r[0]) for r in conn.execute(sql, [terms, *scope_params, depth]).fetchall()]
 
 
+def _demote_tests(conn: psycopg.Connection, query: str, score: dict[int, float]) -> set[int]:
+    """Test files rank lower: they repeat the words of the code they test, and the code is
+    usually what is being asked about. They are not hidden, and a query that is about tests
+    ranks them as any other file. Returns the chunks that were demoted."""
+    if not score or _ABOUT_TESTS.search(query):
+        return set()
+    rows = conn.execute(
+        "SELECT c.id, f.path FROM chunks c JOIN files f ON f.id = c.file_id WHERE c.id = ANY(%s)",
+        (list(score),),
+    ).fetchall()
+    demoted = {int(i) for i, path in rows if is_test_path(PurePosixPath(str(path)))}
+    for chunk_id in demoted:
+        score[chunk_id] *= TEST_PENALTY
+    return demoted
+
+
 def search_code(
     conn: psycopg.Connection,
     embedder: QueryEmbedder | None,
@@ -160,12 +186,15 @@ def search_code(
         for rank, chunk_id in enumerate(ids, start=1):
             score[chunk_id] += 1.0 / (RRF_K + rank)
             matched[chunk_id].append(leg)
+    penalised = _demote_tests(conn, query, score)
     ordered = sorted(score, key=lambda i: (-score[i], i))
     window = ordered[offset : offset + limit]
     has_more = len(ordered) > offset + limit
     if not ordered:
         notes.append(NO_MATCH_NOTE)
         return Page([], offset, limit, False, notes)
+    if penalised.intersection(window):
+        notes.append(TESTS_NOTE)
 
     rows = conn.execute(
         "SELECT c.id, a.name, f.path, c.start_line, c.end_line, a.indexed_version, c.kind,"
