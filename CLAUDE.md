@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository state
 
-Backend skeleton, the database layer (`src/stc/db/`: migration runner and schema 0001–0003) and indexer stages 1–2 (`src/stc/indexer/`: application detection, hygiene/secrets, file registry): `pyproject.toml`, package `stc` in `src/` (CLI stubs, settings, provider interfaces, `/api/health`), tests, `Dockerfile`, `docker-compose.yml` (`db` + `api`), and an Angular app shell in `frontend/` (Tailwind with the ui-spec tokens, SpartanNG helm (button only), Lucide icons, light/dark toggle, Transloco `en`, Vitest; placeholder page only). Indexer, query engine, DB migrations, MCP server and the chat UI are **not implemented yet**; the stack in `docs/tech-stack.md` is still a proposal beyond the skeleton.
+Backend skeleton, the database layer (`src/stc/db/`: migration runner and schema 0001–0004) and indexer stages 1–3 (`src/stc/indexer/`: application detection, hygiene/secrets, file registry, tree-sitter chunking and symbols): `pyproject.toml`, package `stc` in `src/` (CLI stubs, settings, provider interfaces, `/api/health`), tests, `Dockerfile`, `docker-compose.yml` (`db` + `api`), and an Angular app shell in `frontend/` (Tailwind with the ui-spec tokens, SpartanNG helm (button only), Lucide icons, light/dark toggle, Transloco `en`, Vitest; placeholder page only). Embeddings, relations, catalogs, the query engine, the MCP server and the chat UI are **not implemented yet**; the stack in `docs/tech-stack.md` is still a proposal beyond the skeleton.
 
 Main branch: `develop` (GitHub remote `jnascimentogcc/stc`).
 
@@ -21,7 +21,7 @@ uv run mypy                               # strict
 uv run stc --help                         # CLI (`version`, `migrate-db`, `detect`, `index` work; the rest are stubs)
 uv run stc migrate-db                     # needs STC_DB_MIGRATION_URL (+ STC_APP_PASSWORD for the stc_app role)
 uv run stc detect --root <dir>            # list detected applications (no DB)
-uv run stc index --root <dir> [--dry-run] # detect + hygiene + register files (needs STC_DB_URL unless --dry-run)
+uv run stc index --root <dir> [--dry-run] # detect + hygiene + register + chunk files (needs STC_DB_URL unless --dry-run)
 uv run uvicorn stc.api.app:app --reload   # API on :8000, health at /api/health
 docker compose up --build                 # needs .env (copy .env.example)
 ```

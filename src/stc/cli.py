@@ -9,6 +9,7 @@ import typer
 from stc import __version__
 from stc.config import get_settings
 from stc.db.migrate import MigrationError, migrate
+from stc.indexer.chunk_store import chunk_pending
 from stc.indexer.pipeline import detect_root, scan_root
 from stc.indexer.registry import sync_registry
 from stc.indexer.rootconfig import ConfigError
@@ -66,7 +67,7 @@ def index(
         bool, typer.Option("--prune", help="Remove applications that are no longer in the Root.")
     ] = False,
 ) -> None:
-    """Detect applications, apply hygiene and register files (later stages are not built yet)."""
+    """Detect applications, apply hygiene, register and chunk files (later stages not built)."""
     root = _resolve_root(root)
     try:
         scanned = scan_root(root)
@@ -102,6 +103,23 @@ def index(
         f"Registry: {len(result.apps_added)} application(s) added, "
         f"{len(changed)} with file changes, {len(result.apps_removed)} removed."
     )
+    try:
+        with psycopg.connect(settings.db_url) as conn:
+            chunks = chunk_pending(conn, root)
+    except psycopg.Error as exc:
+        typer.echo(f"Database error while chunking: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(
+        f"Chunks: {chunks.files_chunked} file(s) chunked ({chunks.files_as_text} as text), "
+        f"{chunks.chunks_new} new, {chunks.chunks_kept} kept, {chunks.chunks_removed} removed; "
+        f"{chunks.symbols} symbols."
+    )
+    if chunks.files_skipped:
+        typer.echo(
+            f"{chunks.files_skipped} file(s) skipped (unreadable or changed during the run); "
+            "run `stc index` again.",
+            err=True,
+        )
     if result.apps_missing:
         typer.echo(
             "Not found in the Root (kept; use --prune to remove): "

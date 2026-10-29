@@ -117,6 +117,12 @@ def _sync_files(conn: psycopg.Connection, app_id: int, app: ScannedApplication) 
                     " WHERE id = %s",
                     (*_row(record)[1:], current[0]),
                 )
+                if record.status not in ("indexed", "unsupported"):
+                    # A file that became a secret (or is otherwise excluded) must leave no
+                    # derived knowledge behind (IDX-06, XCT-01).
+                    cur.execute("DELETE FROM chunks WHERE file_id = %s", (current[0],))
+                    cur.execute("DELETE FROM symbols WHERE file_id = %s", (current[0],))
+                    cur.execute("UPDATE files SET chunked_key = NULL WHERE id = %s", (current[0],))
                 out.files_changed += 1
     return out
 

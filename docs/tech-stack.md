@@ -31,7 +31,7 @@ Cross-cutting principles:
 | Language | **Python ≥ 3.12** | Strict typing; English identifiers and domain terms |
 | API | **FastAPI** + **Uvicorn** | Chat responses streamed over SSE |
 | Models and validation | **Pydantic ≥ 2**, **jsonschema** | Structured LLM output validated against a schema before being accepted |
-| Code analysis | **tree-sitter** (`tree-sitter` + `tree-sitter-language-pack`) | Chunking by function/class/module and symbol extraction in all supported languages (IDX-08) |
+| Code analysis | **tree-sitter** (`tree-sitter` pinned below 0.26 plus the official per-language grammar wheels) | Chunking by function/class/module and symbol extraction in all supported languages (IDX-08) |
 | Secret detection | **detect-secrets** + filename rules | Runs before any other processing (IDX-06, XCT-01) |
 | Literal search | **ripgrep** (process) | Exact patterns and text over the current Root (QRY-07) |
 | Version history | **git** (CLI, `subprocess`) | Change detection and indexed version per application (LCY-02, LCY-08) |
@@ -60,7 +60,7 @@ Cross-cutting principles:
 
 1. **Detection**: walks the Root, applies exclusions and identifies applications through marker files (`package.json`, `pom.xml`, `*.csproj`, `pyproject.toml`, `go.mod`, …), with manual corrections in `stc.toml` (IDX-02, IDX-03). A directory with a marker is an application and owns its subtree (nested markers do not split it); workspace roots (npm workspaces, Maven parent POMs, Cargo/Gradle workspaces) are not applications, detection descends into them. `stc.toml` at the Root can rename, include, exclude, merge (`paths = [...]`) and split applications, and add gitignore-style exclusion patterns; see the docstring of `stc/indexer/rootconfig.py`.
 2. **Hygiene**: noise exclusions and secret detection; whatever is excluded is recorded without its value.
-3. **Decomposition**: tree-sitter produces chunks and symbols; files in languages without a grammar enter as text and are flagged (IDX-04).
+3. **Decomposition**: tree-sitter produces chunks and symbols (IDX-08); files in languages without a grammar are chunked as text and flagged (IDX-04). Grammars come from the official per-language wheels, pinned in `uv.lock`, so there are no runtime downloads (Python, JavaScript, TypeScript/TSX, Java, C#, Go, Rust, Ruby, PHP, Kotlin, C, C++ for now). Each function, method or class is one chunk (with its decorators and the comment right above it); the code between definitions becomes `module` chunks; a class over the size limit becomes a header chunk plus one chunk per member (named `Class.member`); anything still over 120 lines or 6,000 characters is cut at blank lines; Markdown is split at headings and everything else as text. Symbols are the definitions (function, method, class, interface, ...) and the call sites, each linked to its chunk and line range (QRY-07). Chunks are re-created only when a file's content hash or the chunker version changes, and an unchanged chunk keeps its row, so only new or changed chunks need embeddings. A file that turns into a secret loses its chunks and symbols immediately.
 4. **Incremental**: SHA-256 per file plus `git diff` between versions; only changed files and affected applications are reprocessed (LCY-01 to LCY-04).
 5. **Embeddings**: only for new or changed chunks, in batches.
 6. **Relations**: extracted by static analysis and heuristics (URLs and endpoints, queues and topics, database connections, internal libraries, configuration) and then confirmed by the LLM with evidence (CAT-07).
@@ -156,6 +156,7 @@ Root mounted read-only; secrets excluded before any indexing or external call an
 - **Chat authentication**: to be defined. Starting hypothesis: single-user installation behind the proxy; later, cookie-based sessions.
 - **Per-application access control**: out of scope in v0.1 (functional spec, §6).
 - **Embeddings and LLM provider**: OpenAI at launch; Anthropic to be added once a key is available. Reassess by quality on code, and decide whether sensitive applications require local models or an EU-based provider.
+- **tree-sitter version**: `tree-sitter` 0.26.0 corrupts the heap on Windows (random access violations, reproduced without any STC code); it is pinned to `<0.26` until a fixed release is verified.
 - **Deeper static analysis** (SCIP/LSIF, call graph): candidate for phase 2 to increase relation precision.
 - **Hosting and proxy**: to be decided (local machine, own server or cloud).
 - **Capacity**: a full indexing has CPU and LLM-call peaks; size it after the pilot with 3–5 applications.

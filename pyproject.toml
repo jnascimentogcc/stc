@@ -14,6 +14,20 @@ dependencies = [
     "psycopg[binary,pool]>=3.2",
     "pydantic-settings>=2.6",
     "structlog>=24.4",
+    # tree-sitter 0.26.0 corrupts the heap on Windows (random access violations); stay below it.
+    "tree-sitter>=0.25,<0.26",
+    "tree-sitter-c>=0.23",
+    "tree-sitter-c-sharp>=0.23",
+    "tree-sitter-cpp>=0.23",
+    "tree-sitter-go>=0.23",
+    "tree-sitter-java>=0.23",
+    "tree-sitter-javascript>=0.23",
+    "tree-sitter-kotlin>=1.1",
+    "tree-sitter-php>=0.23",
+    "tree-sitter-python>=0.23",
+    "tree-sitter-ruby>=0.23",
+    "tree-sitter-rust>=0.23",
+    "tree-sitter-typescript>=0.23",
     "typer>=0.15",
     "uvicorn>=0.32",
 ]
@@ -42,6 +56,9 @@ src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E501"]
 
 [tool.mypy]
 strict = true
