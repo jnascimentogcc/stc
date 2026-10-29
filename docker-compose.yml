@@ -1,0 +1,35 @@
+# Skeleton: only `db` and `api` for now. `migrate`, `worker`, `mcp` and `web` are added
+# as those components are implemented (see docs/tech-stack.md, section 8).
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_DB: stc
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d stc"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build: .
+    env_file: .env
+    environment:
+      STC_ROOT: /root-apps
+      STC_CATALOGS: /catalogs
+      STC_DATA: /data
+    volumes:
+      - ${STC_ROOT:?set STC_ROOT in .env}:/root-apps:ro
+      - ./catalogs:/catalogs
+      - ./data:/data
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  db-data:

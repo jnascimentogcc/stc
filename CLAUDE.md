@@ -4,9 +4,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository state
 
-Currently contains **documentation only** in `docs/` (no code, no `pyproject.toml`, no `frontend/`, no tests), plus `LICENSE`. There are no build/lint/test commands to run yet. The stack described below is a **proposal** (v0.1), not something already implemented.
+Backend skeleton only: `pyproject.toml`, package `stc` in `src/` (CLI stubs, settings, provider interfaces, `/api/health`), tests, `Dockerfile`, `docker-compose.yml` (`db` + `api`). Indexer, query engine, DB migrations, MCP server and the Angular frontend are **not implemented yet**; the stack in `docs/tech-stack.md` is still a proposal beyond the skeleton.
 
 Main branch: `develop` (GitHub remote `jnascimentogcc/stc`).
+
+## Commands
+
+Backend, from the repo root (uses [uv](https://docs.astral.sh/uv/); Python >= 3.12):
+
+```bash
+uv sync                                   # create .venv and install deps (incl. dev group)
+uv run pytest                             # all tests
+uv run pytest tests/test_cli.py::test_version   # a single test
+uv run ruff check . && uv run ruff format --check .
+uv run mypy                               # strict
+uv run stc --help                         # CLI (commands other than `version` are stubs)
+uv run uvicorn stc.api.app:app --reload   # API on :8000, health at /api/health
+docker compose up --build                 # needs .env (copy .env.example)
+```
 
 ## Language
 
@@ -51,4 +66,3 @@ The project is **open source under the MIT license** (`LICENSE`, copyright Jorge
 - `stc` CLI (Typer): `index`, `reindex`, `status`, `catalog`, `evaluate`, `migrate-db`, `serve-mcp`.
 - Python package `stc` in `src/`; numbered SQL migrations in `src/stc/db/migrations/`; two DB roles (schema owner and `stc_app`).
 - Quality: pytest, ruff, mypy, Vitest; quality evaluation via `stc evaluate` with `evaluation/questions.yaml`.
-- Once code exists, update this file with the real commands (including how to run a single test).
