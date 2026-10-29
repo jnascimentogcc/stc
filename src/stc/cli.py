@@ -460,6 +460,39 @@ def migrate_db() -> None:
 
 
 @app.command(name="serve-mcp")
-def serve_mcp() -> None:
-    """Run the MCP server."""
-    _not_implemented("serve-mcp")
+def serve_mcp(
+    transport: Annotated[
+        str, typer.Option(help="stdio (local clients) or http (shared use, needs STC_MCP_TOKEN).")
+    ] = "stdio",
+    host: Annotated[str | None, typer.Option(help="HTTP host (default STC_MCP_HOST).")] = None,
+    port: Annotated[int | None, typer.Option(help="HTTP port (default STC_MCP_PORT).")] = None,
+) -> None:
+    """Run the MCP server over the query engine (read-only)."""
+    from stc.mcp_server import build_http_app, build_server
+
+    settings = get_settings()
+    if transport not in ("stdio", "http"):
+        typer.echo("--transport must be stdio or http.", err=True)
+        raise typer.Exit(code=2)
+    if settings.db_url is None:
+        typer.echo("STC_DB_URL is not set.", err=True)
+        raise typer.Exit(code=2)
+    server = build_server(settings)
+    if transport == "stdio":
+        server.run("stdio")  # stdout belongs to the protocol: nothing else may print there
+        return
+    if not settings.mcp_token:
+        typer.echo("STC_MCP_TOKEN must be set to serve MCP over HTTP.", err=True)
+        raise typer.Exit(code=2)
+    import uvicorn
+
+    chosen = settings.model_copy(
+        update={"mcp_host": host or settings.mcp_host, "mcp_port": port or settings.mcp_port}
+    )
+    typer.echo(f"MCP over HTTP on http://{chosen.mcp_host}:{chosen.mcp_port}/mcp", err=True)
+    uvicorn.run(
+        build_http_app(chosen, server),
+        host=chosen.mcp_host,
+        port=chosen.mcp_port,
+        log_level="warning",
+    )

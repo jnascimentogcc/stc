@@ -149,7 +149,34 @@ The last one must be refused (`forbidden`): the file holds a fake secret. `searc
 question with the embeddings provider (a tiny call) and combines it with text and name matches;
 without embeddings in the database it says so and uses text only.
 
-## 10. Check the result in the database
+## 10. Use it from Claude (MCP)
+
+The MCP server gives a model the same tools you just tried. For Claude Code, from any folder
+(replace the path with your clone; `uv run --directory` makes `.env` found):
+
+```bash
+claude mcp add stc -- uv run --directory /path/to/stc stc serve-mcp
+```
+
+For Claude Desktop, add this to `claude_desktop_config.json` and restart the app:
+
+```json
+{
+  "mcpServers": {
+    "stc": {
+      "command": "uv",
+      "args": ["run", "--directory", "/path/to/stc", "stc", "serve-mcp"]
+    }
+  }
+}
+```
+
+Then ask, for example, "Which applications call demo-api, and where?". The model should call
+`get_dependencies` and answer with `demo-web/src/client.ts:2-2`. For shared use, set
+`STC_MCP_TOKEN` and run `uv run stc serve-mcp --transport http`; clients send
+`Authorization: Bearer <token>` to `http://host:8765/mcp`.
+
+## 11. Check the result in the database
 
 ```bash
 docker exec stc-dev-db psql -U postgres -d stc -c "select provider, model, vector_dims(embedding) as dims, count(*) from chunk_embeddings group by 1,2,3"
@@ -161,7 +188,7 @@ Expect one row: your provider and model, `1536`, and `10`. To see how the code w
 docker exec stc-dev-db psql -U postgres -d stc -c "select f.path, c.kind, c.name, c.start_line, c.end_line from chunks c join files f on f.id = c.file_id order by f.path, c.start_line"
 ```
 
-## 11. Clean up
+## 12. Clean up
 
 ```bash
 docker rm -f stc-dev-db

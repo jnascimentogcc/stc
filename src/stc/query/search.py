@@ -138,12 +138,17 @@ def search_code(
 
     legs: dict[str, list[int]] = {}
     if embedder is not None:
-        legs["semantic"] = _semantic_ids(conn, embedder, query, scope, scope_params, depth)
-        if not legs["semantic"]:
-            notes.append(
-                f"No chunk is embedded with {embedder.provider}/{embedder.model} in this scope: "
-                "the semantic part found nothing (run `stc embed`)."
-            )
+        try:
+            legs["semantic"] = _semantic_ids(conn, embedder, query, scope, scope_params, depth)
+        except QueryError as exc:
+            legs["semantic"] = []
+            notes.append(f"{exc.message} Falling back to lexical search only.")
+        else:
+            if not legs["semantic"]:
+                notes.append(
+                    f"No chunk is embedded with {embedder.provider}/{embedder.model} in this "
+                    "scope: the semantic part found nothing (run `stc embed`)."
+                )
     else:
         notes.append("Semantic search is not available (no embeddings client): lexical only.")
     legs["lexical"] = _lexical_ids(conn, terms, scope, scope_params, depth)
