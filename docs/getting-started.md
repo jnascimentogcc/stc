@@ -119,6 +119,17 @@ analysis, and each section starts with an empty `stc:manual` block where you can
 corrections that survive regeneration. Running the command again says `Up to date` and calls
 nothing.
 
+Every `stc catalog` run also rewrites `catalogs/_global-map.md`: the applications, the relation
+graph (Mermaid), shared databases, common libraries and applications with no relationships. It is
+built from the database without calling the LLM, so you can refresh it any time for free:
+
+```bash
+uv run stc map
+```
+
+With many applications, `uv run stc catalog --all --dry-run` prints one line per application and
+the total estimate; drop `--dry-run` to generate them all (already up-to-date ones are skipped).
+
 ## 9. Check the result in the database
 
 ```bash

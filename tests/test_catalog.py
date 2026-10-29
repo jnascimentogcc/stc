@@ -12,6 +12,7 @@ import pytest
 
 from stc.catalog.context import UnknownApplication, build_context
 from stc.catalog.generate import estimate_tokens, normalize_file, verify_claims
+from stc.catalog.globalmap import build_global_map, global_map_path, write_global_map
 from stc.catalog.model import Claim, Evidence, parse_section_output
 from stc.catalog.render import parse_manual_blocks
 from stc.catalog.store import catalog_path, generate_and_store, prepare
@@ -331,3 +332,84 @@ def test_estimate_counts_only_sections_with_context(conn: psycopg.Connection) ->
         if not ctx.sections[s].empty
     ]
     assert tokens_in > 0 and tokens_out == 700 * len(sent)
+
+
+# --- global map (CAT-06) -------------------------------------------------------------------------
+
+
+def test_global_map_lists_applications_relations_and_isolated_ones(
+    conn: psycopg.Connection, tmp_path: Path
+) -> None:
+    write(tmp_path / "root", "solo/package.json", '{"name": "solo"}')
+    index(conn, tmp_path / "root")
+    llm = FakeLLM({"purpose": reply(("It issues invoices.", "high", [("README.md", 1, 3)]))})
+    generate(conn, llm, tmp_path)
+    text = build_global_map(conn)
+    assert "## Applications (3)" in text
+    assert "| `svc` | `svc` | It issues invoices. |" in text
+    assert "| `web` | `web` | _No catalog yet._ |" in text
+    assert "```mermaid" in text and "-->|http|" in text
+    assert "| `web` | `svc` | http | high |" in text
+    assert "1. `svc`, `web`" in text
+    assert "## Applications with no relationships\n\n- `solo`" in text
+    assert "credentials" not in text
+
+
+def test_global_map_keeps_notes_and_is_stable_between_runs(
+    conn: psycopg.Connection, tmp_path: Path
+) -> None:
+    catalogs = tmp_path / "catalogs"
+    path = write_global_map(conn, catalogs)
+    assert path == global_map_path(catalogs)
+    first = path.read_text(encoding="utf-8")
+    path.write_text(
+        first.replace(
+            "<!-- stc:manual:begin section=notes -->\n",
+            "<!-- stc:manual:begin section=notes -->\nweb is being retired.",
+        ),
+        encoding="utf-8",
+    )
+    write_global_map(conn, catalogs)
+    again = path.read_text(encoding="utf-8")
+    assert "web is being retired." in again
+    assert write_global_map(conn, catalogs).read_text(encoding="utf-8") == again
+
+
+def test_global_map_reports_shared_databases_and_common_libraries(
+    conn: psycopg.Connection, tmp_path: Path
+) -> None:
+    root = tmp_path / "root"
+    write(root, "svc/db.py", 'URL = "postgresql://dbhost:5432/shared"\n')
+    write(root, "web/db.js", "const url = 'postgresql://dbhost:5432/shared';\n")
+    write(root, "svc/requirements.txt", "requests==2.0\n")
+    write(root, "web/package.json", '{"name": "web", "dependencies": {"requests": "1.0.0"}}')
+    index(conn, root)
+    text = build_global_map(conn)
+    databases = text.split("## Shared databases")[1].split("## ")[0]
+    assert "`svc`" in databases and "`web`" in databases and "shared" in databases
+    libraries = text.split("## Common technologies")[1].split("## ")[0]
+    assert "`requests`" in libraries
+
+
+def test_all_catalogs_share_one_event_loop(conn: psycopg.Connection, tmp_path: Path) -> None:
+    """The provider client pools connections per event loop; `--all` must not start a new loop
+    for each application (it crashed with "Event loop is closed" on the second one)."""
+    from stc.cli import _generate_all
+    from stc.config import Settings
+
+    loops: set[int] = set()
+
+    class LoopLLM(FakeLLM):
+        async def complete(self, messages, **kwargs):  # type: ignore[no-untyped-def]
+            loops.add(id(asyncio.get_running_loop()))
+            return await super().complete(messages, **kwargs)
+
+    llm = LoopLLM()
+    plan = [
+        prepare(conn, name, tmp_path / "catalogs", provider="fake", model="fake-model",
+                language="English")
+        for name in ("svc", "web")
+    ]  # fmt: skip
+    failed = asyncio.run(_generate_all(conn, llm, plan, Settings(language="English")))
+    assert failed == [] and len(loops) == 1
+    assert catalog_path(tmp_path / "catalogs", "web").is_file()

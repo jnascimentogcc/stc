@@ -9,8 +9,9 @@ import typer
 
 from stc import __version__
 from stc.catalog.context import UnknownApplication
+from stc.catalog.globalmap import write_global_map
 from stc.catalog.model import LLM_SECTIONS
-from stc.catalog.store import generate_and_store, prepare
+from stc.catalog.store import Prepared, generate_and_store, prepare
 from stc.config import Settings, get_settings
 from stc.db.migrate import MigrationError, migrate
 from stc.indexer.chunk_store import chunk_pending
@@ -20,6 +21,7 @@ from stc.indexer.registry import sync_registry
 from stc.indexer.rootconfig import ConfigError
 from stc.indexer.signal_store import extract_pending, list_relations, rebuild_relations
 from stc.providers import (
+    LLMClient,
     Message,
     ProviderError,
     build_embeddings_client,
@@ -297,9 +299,45 @@ def status() -> None:
     _not_implemented("status")
 
 
+async def _generate_all(
+    conn: psycopg.Connection, llm: LLMClient, plan: list[Prepared], settings: Settings
+) -> list[str]:
+    """Generate every planned catalog in ONE event loop: the provider client keeps pooled
+    connections that belong to the loop that created them. Returns the incomplete ones."""
+    failed: list[str] = []
+    for prepared in plan:
+        name = prepared.context.name
+        try:
+            outcome = await generate_and_store(
+                conn, llm, prepared, language=settings.language, concurrency=settings.concurrency
+            )
+        except ProviderError as exc:
+            typer.echo(f"{name}: failed: {exc}", err=True)
+            failed.append(name)
+            continue
+        typer.echo(
+            f"{name}: wrote {outcome.path} ({outcome.status}): {outcome.claims} statement(s) "
+            f"with verified evidence; {outcome.input_tokens:,} input and "
+            f"{outcome.output_tokens:,} output tokens used."
+        )
+        if outcome.failed_sections:
+            typer.echo(
+                f"{name}: sections that failed: {', '.join(outcome.failed_sections)}"
+                " (run again to retry).",
+                err=True,
+            )
+            failed.append(name)
+    return failed
+
+
 @app.command()
 def catalog(
-    application: Annotated[str, typer.Argument(help="Application name (see `stc detect`).")],
+    application: Annotated[
+        str | None, typer.Argument(help="Application name (see `stc detect`).")
+    ] = None,
+    all_applications: Annotated[
+        bool, typer.Option("--all", help="Generate the catalog of every indexed application.")
+    ] = False,
     dry_run: Annotated[
         bool, typer.Option("--dry-run", help="Only show what would be sent and the estimate.")
     ] = False,
@@ -308,71 +346,88 @@ def catalog(
     ] = False,
     yes: YesOption = False,
 ) -> None:
-    """Generate the catalog of one application into STC_CATALOGS (needs indexed chunks)."""
+    """Generate the catalog of one application (or --all) and refresh the global map."""
+    if (application is not None) == all_applications:
+        typer.echo("Give an application name or --all (not both).", err=True)
+        raise typer.Exit(code=2)
     settings = get_settings()
     if settings.db_url is None:
         typer.echo("STC_DB_URL is not set.", err=True)
         raise typer.Exit(code=2)
     provider = settings.llm_provider
     model = settings.llm_catalog_model or "(not set)"
+    failed: list[str] = []
     try:
         with psycopg.connect(settings.db_url, autocommit=True) as conn:
-            try:
+            known = [str(r[0]) for r in conn.execute("SELECT name FROM applications ORDER BY 1")]
+            if all_applications:
+                names = known
+            else:
+                assert application is not None
+                if application not in known:
+                    typer.echo(
+                        f"Unknown application {application!r}. Indexed applications: "
+                        + (", ".join(known) or "(none; run `stc index`)"),
+                        err=True,
+                    )
+                    raise typer.Exit(code=2)
+                names = [application]
+            plan = []
+            for name in names:
                 prepared = prepare(
-                    conn, application, settings.catalogs, provider=provider, model=model,
+                    conn, name, settings.catalogs, provider=provider, model=model,
                     language=settings.language, force=force,
                 )  # fmt: skip
-            except UnknownApplication as exc:
-                known = [
-                    str(r[0]) for r in conn.execute("SELECT name FROM applications ORDER BY 1")
-                ]
-                typer.echo(
-                    f"Unknown application {application!r}. Indexed applications: "
-                    + (", ".join(known) or "(none; run `stc index`)"),
-                    err=True,
-                )
-                raise typer.Exit(code=2) from exc
-            sections = [s for s in LLM_SECTIONS if not prepared.context.sections[s].empty]
+                sections = [s for s in LLM_SECTIONS if not prepared.context.sections[s].empty]
+                state = "up to date" if prepared.up_to_date else (
+                    f"{len(sections)} of {len(LLM_SECTIONS)} sections have evidence; about "
+                    f"{prepared.estimate_input_tokens:,} input tokens"
+                )  # fmt: skip
+                typer.echo(f"{name}: {state}")
+                if not prepared.up_to_date:
+                    plan.append(prepared)
+            tokens_in = sum(p.estimate_input_tokens for p in plan)
+            tokens_out = sum(p.estimate_output_tokens for p in plan)
             typer.echo(
-                f"{application}: {len(sections)} of {len(LLM_SECTIONS)} sections have evidence "
-                f"to send to {provider}/{model}; about {prepared.estimate_input_tokens:,} input "
-                f"and {prepared.estimate_output_tokens:,} output tokens (rough estimate)."
+                f"{len(plan)} of {len(names)} catalog(s) to generate with {provider}/{model}; "
+                f"about {tokens_in:,} input and {tokens_out:,} output tokens (rough estimate)."
             )
-            if prepared.up_to_date:
-                typer.echo(f"Up to date: {prepared.path} (use --force to regenerate).")
-                return
             if dry_run:
                 return
-            llm = build_llm_client(settings, "catalog")
-            if prepared.estimate_input_tokens > CONFIRM_TOKENS and not yes:
-                typer.confirm("Continue?", abort=True)
-            outcome = asyncio.run(
-                generate_and_store(
-                    conn,
-                    llm,
-                    prepared,
-                    language=settings.language,
-                    concurrency=settings.concurrency,
-                )
-            )
+            if plan:
+                llm = build_llm_client(settings, "catalog")
+                if tokens_in > CONFIRM_TOKENS and not yes:
+                    typer.confirm("Continue?", abort=True)
+                failed = asyncio.run(_generate_all(conn, llm, plan, settings))
+            typer.echo(f"Wrote {write_global_map(conn, settings.catalogs)}")
+    except UnknownApplication as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
     except ProviderError as exc:
         typer.echo(f"Catalog failed: {exc}", err=True)
         raise typer.Exit(code=1) from exc
     except psycopg.Error as exc:
         typer.echo(f"Database error: {exc}", err=True)
         raise typer.Exit(code=1) from exc
-    typer.echo(
-        f"Wrote {outcome.path} ({outcome.status}): {outcome.claims} statement(s) with verified "
-        f"evidence; {outcome.input_tokens:,} input and {outcome.output_tokens:,} output tokens used."  # noqa: E501
-    )
-    if outcome.failed_sections:
-        typer.echo(
-            "Sections that failed: "
-            + ", ".join(outcome.failed_sections)
-            + " (run again to retry).",
-            err=True,
-        )
+    if failed:
+        typer.echo(f"{len(failed)} application(s) not complete: {', '.join(failed)}", err=True)
         raise typer.Exit(code=1)
+
+
+@app.command(name="map")
+def global_map() -> None:
+    """Rebuild the global map from the indexed relations and catalogs (no LLM, no cost)."""
+    settings = get_settings()
+    if settings.db_url is None:
+        typer.echo("STC_DB_URL is not set.", err=True)
+        raise typer.Exit(code=2)
+    try:
+        with psycopg.connect(settings.db_url, autocommit=True) as conn:
+            path = write_global_map(conn, settings.catalogs)
+    except psycopg.Error as exc:
+        typer.echo(f"Database error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(f"Wrote {path}")
 
 
 @app.command()

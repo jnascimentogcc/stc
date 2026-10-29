@@ -35,3 +35,9 @@ def test_check_providers_reports_missing_configuration(monkeypatch: pytest.Monke
 def tmp_path_without_env() -> Path:
     # A directory with no .env, so a developer's local settings cannot leak into the test.
     return Path(tempfile.mkdtemp())
+
+
+def test_catalog_needs_exactly_one_of_application_or_all() -> None:
+    for args in (["catalog"], ["catalog", "svc", "--all"]):
+        result = runner.invoke(app, args)
+        assert result.exit_code == 2
