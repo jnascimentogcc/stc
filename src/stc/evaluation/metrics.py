@@ -50,6 +50,23 @@ def score_retrieval(
     return RetrievalScore(ranks, min(found) if found else None)
 
 
+# How an answer says that something is not there, in any wording: a negation near a word about
+# finding, knowing or showing. Used when a question gives no phrases of its own.
+_ADMISSION = re.compile(
+    r"\b(?:no|not|none|never|cannot|can't|unable|unknown|without)\b[^.\n]{0,80}"
+    r"\b(?:found|find|determine|determined|show|shown|shows|present|evidence|exist|exists|"
+    r"visible|available|indicat\w+|implement\w*|defined|defines)\b"
+    r"|\bunknown\s*[:*]"  # the labelled "Unknown:" part the chat prompt asks for
+)
+
+
+def admits_not_knowing(answer: str, phrases: list[str], *, own_phrases: bool) -> bool:
+    text = answer.lower().replace("’", "'")
+    if any(p.lower() in text for p in phrases):
+        return True
+    return not own_phrases and _ADMISSION.search(text) is not None
+
+
 def names_application(answer: str, application: str) -> bool:
     return (
         re.search(rf"(?<![\w-]){re.escape(application)}(?![\w-])", answer, re.IGNORECASE)
@@ -98,7 +115,9 @@ def score_answer(question: Question, answer: str, citations: list[dict[str, Any]
     if expect.contains:
         checks["contains"] = all(s.lower() in lowered for s in expect.contains)
     if question.admissions:
-        checks["admits"] = any(s.lower() in lowered for s in question.admissions)
+        checks["admits"] = admits_not_knowing(
+            answer, question.admissions, own_phrases=bool(expect.contains_any)
+        )
     elif expect.contains_any:
         checks["contains_any"] = any(s.lower() in lowered for s in expect.contains_any)
     if expect.not_contains:

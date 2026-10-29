@@ -166,6 +166,24 @@ def test_each_check_can_fail_on_its_own() -> None:
     assert not score_answer(question(expect={"applications": ["svc"]}), "svc-two", []).passed
 
 
+def test_admissions_are_recognised_in_different_wordings() -> None:
+    q = question(kind="unanswerable")
+    for text in (
+        "**No user authentication was found in demo-api’s indexed code.** It only greets.",
+        "I can’t determine what is stored there.",
+        "The code does not show any login.",
+        "There is no evidence of authentication.",
+        "Unknown: how users sign in.",
+    ):
+        assert score_answer(q, text, []).passed, text
+    for text in ("It authenticates users with OAuth.", "The endpoint returns a greeting."):
+        assert not score_answer(q, text, []).passed, text
+    # With phrases of its own, a question asks for those words and nothing looser.
+    own = question(kind="unanswerable", expect={"contains_any": ["withheld"]})
+    assert not score_answer(own, "No evidence was found.", []).passed
+    assert score_answer(own, "The file is withheld.", []).passed
+
+
 def test_unanswerable_answers_must_admit_it() -> None:
     q = question(kind="unanswerable", expect={"not_contains": ["token-123"]})
     assert score_answer(q, "I could not find that in the indexed code.", []).passed
