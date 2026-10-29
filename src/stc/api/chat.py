@@ -206,6 +206,15 @@ def build_chat_router(
         )
 
         async def stream() -> AsyncIterator[str]:
+            try:
+                async for chunk in answer():
+                    yield chunk
+            finally:
+                close = getattr(llm, "aclose", None)
+                if close is not None:  # in the loop that used the client
+                    await close()
+
+        async def answer() -> AsyncIterator[str]:
             async for event in run_agent(
                 llm,
                 server,

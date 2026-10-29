@@ -71,6 +71,10 @@ class OpenAILLM:
         self._max_output_tokens = max_output_tokens
         self._reasoning_effort = reasoning_effort
 
+    async def aclose(self) -> None:
+        """Close the HTTP connections; call it in the event loop that used the client."""
+        await self._client.close()
+
     async def complete(
         self,
         messages: Sequence[Message],
@@ -210,6 +214,10 @@ class OpenAIEmbeddings:
         self._limiter = limiter
         self._batch_size = batch_size
         self._batch_chars = batch_chars
+
+    async def aclose(self) -> None:
+        """Close the HTTP connections; call it in the event loop that used the client."""
+        await self._client.close()
 
     async def embed(self, texts: Sequence[str]) -> list[list[float]]:
         if any(not text.strip() for text in texts):

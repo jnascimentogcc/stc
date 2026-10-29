@@ -33,6 +33,7 @@ dependencies = [
     "typer>=0.15",
     "uvicorn>=0.32",
     "mcp>=1.2",
+    "pyyaml>=6.0.3",
 ]
 
 [project.scripts]
@@ -45,6 +46,7 @@ dev = [
     "types-defusedxml>=0.7",
     "pytest>=8.3",
     "ruff>=0.8",
+    "types-pyyaml>=6.0.12.20260906",
 ]
 
 [build-system]

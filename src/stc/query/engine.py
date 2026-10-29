@@ -10,7 +10,7 @@ from pathlib import Path
 import psycopg
 
 from stc.config import Settings
-from stc.providers import ProviderError, build_embeddings_client
+from stc.providers import ProviderError, build_embeddings_client, closing
 from stc.query import browse, search
 from stc.query.models import (
     AppSummary,
@@ -42,7 +42,7 @@ class OpenAIQueryEmbedder:
     def __call__(self, text: str) -> list[float]:
         client = build_embeddings_client(self._settings)
         try:
-            return asyncio.run(client.embed([text]))[0]
+            return asyncio.run(closing(client.embed([text]), client))[0]
         except ProviderError as exc:
             raise QueryError("unavailable", f"Embedding the query failed: {exc}") from exc
 

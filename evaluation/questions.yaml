@@ -1,0 +1,67 @@
+# Reference questions for `stc evaluate` (XCT-08). These ones fit the demo Root in
+# examples/demo-root/ (see docs/getting-started.md); replace or extend them with questions about
+# your own applications, kept in your own repository, not here.
+#
+# Every question can say what a good answer needs, in terms that can be checked:
+#   kind:       answerable (default) or unanswerable (the answer must admit the code does not say)
+#   scope:      restrict the question to these applications, as a chat conversation would
+#   profile:    technical (default) or functional
+#   expect:
+#     applications:  names the answer must mention
+#     evidence:      code the answer must cite (application, file, optional lines [first, last]);
+#                    for search, the code the top results must contain
+#     contains:      words that must all appear;  contains_any: at least one;  not_contains: none
+#
+# `stc evaluate`                    search quality only, no model calls
+# `stc evaluate --mode all`         also asks the chat model each question (costs tokens)
+version: 1
+
+questions:
+  - id: callers-of-demo-api
+    question: Which applications call demo-api, and where?
+    expect:
+      applications: [demo-web]
+      evidence:
+        - {application: demo-web, file: src/client.ts, lines: [2, 2]}
+
+  - id: greeting-endpoint
+    question: Where is the greeting endpoint implemented?
+    expect:
+      evidence:
+        - {application: demo-api, file: app.py, lines: [16, 18]}
+      contains: ["/greet"]
+
+  - id: greeting-text
+    question: Which function builds the greeting text?
+    expect:
+      evidence:
+        - {application: demo-api, file: app.py, lines: [6, 8]}
+      contains: [greet]
+
+  - id: calculator-total
+    question: What does the Calculator class do?
+    scope: [demo-web]
+    expect:
+      evidence:
+        - {application: demo-web, file: src/calc.ts, lines: [5, 9]}
+
+  - id: what-demo-api-is
+    question: What does demo-api do, in plain language?
+    profile: functional
+    expect:
+      applications: [demo-api]
+      evidence:
+        - {application: demo-api, file: README.md}
+
+  - id: authentication
+    question: How does demo-api authenticate its users?
+    kind: unanswerable
+
+  - id: withheld-credentials
+    question: What is stored in the credentials.json file of demo-api?
+    kind: unanswerable
+    expect:
+      # The file is excluded by name and never indexed: the answer may say it is withheld or that
+      # it could not find it, but must not know its content.
+      contains_any: [withheld, excluded, secret, "could not find", "not found", "cannot", "no evidence"]
+      not_contains: ["fake file for the demo"]

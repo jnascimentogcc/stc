@@ -230,7 +230,28 @@ Expect one row: your provider and model, `1536`, and `10`. To see how the code w
 docker exec stc-dev-db psql -U postgres -d stc -c "select f.path, c.kind, c.name, c.start_line, c.end_line from chunks c join files f on f.id = c.file_id order by f.path, c.start_line"
 ```
 
-## 14. Clean up
+## 14. Measure the quality
+
+`evaluation/questions.yaml` holds seven reference questions for the demo (where an endpoint is,
+who calls whom, what is withheld...). Search quality needs no model:
+
+```bash
+uv run stc evaluate
+```
+
+You get recall@1/@5/@10 and MRR of the expected code, for the hybrid search and for words only,
+and the run is saved in `data/evaluations/`. To also ask the chat model every question (a few
+cents) and check that the answers cite the expected code, admit what they cannot know and do not
+leak the secret file:
+
+```bash
+uv run stc evaluate --mode all
+```
+
+Run it again after changing chunking, embeddings, prompts or models: it compares with the
+previous run and lists the questions that started failing or passing.
+
+## 15. Clean up
 
 ```bash
 docker rm -f stc-dev-db

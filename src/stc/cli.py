@@ -27,6 +27,7 @@ from stc.providers import (
     ProviderError,
     build_embeddings_client,
     build_llm_client,
+    closing,
 )
 from stc.query.cli import query_app
 
@@ -183,7 +184,9 @@ def _embed_stage(settings: Settings, *, dry_run: bool, yes: bool, soft: bool = F
                 raise
             if estimate.tokens > CONFIRM_TOKENS and not yes:
                 typer.confirm("Continue?", abort=True)
-            stats = asyncio.run(embed_pending(conn, client, concurrency=settings.concurrency))
+            stats = asyncio.run(
+                closing(embed_pending(conn, client, concurrency=settings.concurrency), client)
+            )
     except ProviderError as exc:
         typer.echo(f"Embedding failed: {exc} (progress is kept; run again to resume)", err=True)
         raise typer.Exit(code=1) from exc
@@ -271,13 +274,15 @@ def check_providers() -> None:
 
     async def run() -> None:
         embeddings = build_embeddings_client(settings)
-        vectors = await embeddings.embed(["STC provider check"])
+        vectors = await closing(embeddings.embed(["STC provider check"]), embeddings)
         typer.echo(
             f"embeddings: {embeddings.provider}/{embeddings.model} -> {len(vectors[0])} dimensions"
         )
         for purpose in ("catalog", "chat"):
             llm = build_llm_client(settings, purpose)
-            reply = await llm.complete([Message("user", "Reply with the single word OK.")])
+            reply = await closing(
+                llm.complete([Message("user", "Reply with the single word OK.")]), llm
+            )
             typer.echo(
                 f"llm ({purpose}): {llm.provider}/{llm.model} -> {reply.text.strip()[:40]!r} "
                 f"({reply.usage.input_tokens} in, {reply.usage.output_tokens} out)"
@@ -401,7 +406,7 @@ def catalog(
                 llm = build_llm_client(settings, "catalog")
                 if tokens_in > CONFIRM_TOKENS and not yes:
                     typer.confirm("Continue?", abort=True)
-                failed = asyncio.run(_generate_all(conn, llm, plan, settings))
+                failed = asyncio.run(closing(_generate_all(conn, llm, plan, settings), llm))
             typer.echo(f"Wrote {write_global_map(conn, settings.catalogs)}")
     except UnknownApplication as exc:
         typer.echo(str(exc), err=True)
@@ -484,7 +489,7 @@ def ask(
                 final = event.data
         return final
 
-    done = asyncio.run(run())
+    done = asyncio.run(closing(run(), llm))
     if done is None:
         raise typer.Exit(code=1)
     typer.echo(str(done["answer"]))
@@ -493,9 +498,150 @@ def ask(
 
 
 @app.command()
-def evaluate() -> None:
-    """Run the reference-question evaluation."""
-    _not_implemented("evaluate")
+def evaluate(
+    questions: Annotated[
+        Path, typer.Option("--questions", help="The reference questions (YAML).")
+    ] = Path("evaluation/questions.yaml"),
+    mode: Annotated[
+        str,
+        typer.Option(
+            help="retrieval (search only, almost free), answers (asks the chat model) or all."
+        ),
+    ] = "retrieval",
+    only: Annotated[
+        list[str] | None, typer.Option("--id", help="Only this question id (repeatable).")
+    ] = None,
+    k: Annotated[int, typer.Option(help="How many search results count (max 50).")] = 10,
+    baseline: Annotated[
+        str,
+        typer.Option(help="Report to compare with: a file, 'latest' (default) or 'none'."),
+    ] = "latest",
+    save: Annotated[bool, typer.Option("--save/--no-save", help="Store the report.")] = True,
+    fail_under: Annotated[
+        float | None,
+        typer.Option(help="Exit 1 if answers passed (or search recall@k) falls below this, 0-1."),
+    ] = None,
+    yes: YesOption = False,
+) -> None:
+    """Run the reference questions and report search and answer quality (XCT-08)."""
+    from stc.evaluation import report as reports
+    from stc.evaluation.model import load_questions
+    from stc.evaluation.runner import run_answers, run_retrieval
+    from stc.query.engine import build_query_embedder
+
+    settings = get_settings()
+    if mode not in ("retrieval", "answers", "all"):
+        typer.echo("--mode must be retrieval, answers or all.", err=True)
+        raise typer.Exit(code=2)
+    if not 1 <= k <= 50:
+        typer.echo("--k must be between 1 and 50.", err=True)
+        raise typer.Exit(code=2)
+    if settings.db_url is None:
+        typer.echo("STC_DB_URL is not set.", err=True)
+        raise typer.Exit(code=2)
+    try:
+        question_set = load_questions(questions)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+    selected = [q for q in question_set.questions if not only or q.id in only]
+    unknown = sorted(set(only or []) - {q.id for q in question_set.questions})
+    if unknown or not selected:
+        typer.echo(f"Unknown question id(s): {', '.join(unknown) or '(none selected)'}", err=True)
+        raise typer.Exit(code=2)
+
+    retrieval = None
+    answers = None
+    try:
+        with psycopg.connect(settings.db_url, autocommit=True) as conn:
+            known = {
+                str(r[0]): r[1]
+                for r in conn.execute("SELECT name, indexed_version FROM applications")
+            }
+            missing = sorted(
+                {
+                    a
+                    for q in selected
+                    for a in [*(q.scope or []), *q.expect.applications]
+                    if a not in known
+                }
+            )
+            if missing:
+                typer.echo(
+                    f"The questions name applications that are not indexed: {', '.join(missing)}",
+                    err=True,
+                )
+                raise typer.Exit(code=2)
+            if mode in ("retrieval", "all"):
+                embedder = build_query_embedder(settings)
+                typer.echo(
+                    f"Search: {len(selected)} question(s), "
+                    + ("hybrid and lexical" if embedder else "lexical only (no embeddings client)"),
+                    err=True,
+                )
+                retrieval = run_retrieval(conn, settings, selected, k, embedder)
+            if mode in ("answers", "all"):
+                llm = build_llm_client(settings, "chat")
+                typer.echo(
+                    f"Answers: {len(selected)} question(s) go to {llm.provider}/{llm.model}, up to "
+                    f"8 model calls each.",
+                    err=True,
+                )
+                if not yes:
+                    typer.confirm("Continue?", abort=True)
+
+                def progress(question: object, outcome: object) -> None:
+                    typer.echo(f"  answered {getattr(question, 'id', '?')}", err=True)
+
+                answers = asyncio.run(
+                    closing(run_answers(settings, llm, selected, on_progress=progress), llm)
+                )
+    except ProviderError as exc:
+        typer.echo(f"Evaluation failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    except psycopg.Error as exc:
+        typer.echo(f"Database error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    records = [
+        reports.question_record(q, (retrieval or {}).get(q.id), (answers or {}).get(q.id), k)
+        for q in selected
+    ]
+    report = reports.build_report(
+        records,
+        k=k,
+        mode=mode,
+        settings={
+            "llm": f"{settings.llm_provider}/{settings.llm_chat_model}" if answers else None,
+            "embeddings": f"{settings.embeddings_provider}/{settings.embeddings_model}",
+            "language": settings.language,
+            "reasoning_effort": settings.llm_chat_reasoning_effort,
+        },
+        versions=known,
+        questions_file=questions,
+    )
+    previous = None
+    if baseline != "none":
+        try:
+            path = Path(baseline) if baseline != "latest" else reports.latest_report(settings.data)
+            previous = reports.load_report(path) if path else None
+        except ValueError as exc:
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(code=2) from exc
+    comparison = reports.compare(previous, report) if previous else None
+    for line in reports.render(report, comparison):
+        typer.echo(line)
+    if save:
+        typer.echo(f"Report saved: {reports.save_report(settings.data, report)}", err=True)
+    if fail_under is not None:
+        summary = report["summary"]
+        if answers:
+            value = summary["pass_rate"]
+        else:
+            value = summary.get(f"hybrid_recall_at_{k}") or summary.get(f"lexical_recall_at_{k}")
+        if value is None or value < fail_under:
+            typer.echo(f"Below the required {fail_under:.2f}: {value}", err=True)
+            raise typer.Exit(code=1)
 
 
 @app.command(name="migrate-db")

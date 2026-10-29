@@ -89,6 +89,22 @@ def test_complete_returns_text_usage_and_sends_expected_request() -> None:
     assert "tools" not in body and "response_format" not in body
 
 
+def test_clients_can_be_closed_in_the_loop_that_used_them() -> None:
+    from stc.providers import closing
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=chat_reply("ok"))
+
+    client = llm(handler)
+
+    async def go() -> str:
+        reply = await closing(client.complete([Message("user", "hi")]), client)
+        return reply.text
+
+    assert asyncio.run(go()) == "ok"
+    assert client._client.is_closed()
+
+
 def test_reasoning_effort_is_sent_only_when_configured() -> None:
     bodies: list[dict[str, object]] = []
 
