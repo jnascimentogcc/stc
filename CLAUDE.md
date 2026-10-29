@@ -73,6 +73,7 @@ The project is **open source under the MIT license** (`LICENSE`, copyright Jorge
 
 - `docs/functional-spec.md` — functional requirements with IDs (IDX-*, CAT-*, LCY-*, QRY-*, CHT-*, MCP-*, XCT-*) and acceptance criteria. Cite these IDs when implementing/testing.
 - `docs/tech-stack.md` — proposed stack, indexing pipeline, data model, environment variables (`STC_*`), decisions and open items.
+- `docs/getting-started.md` — step-by-step run of the pipeline on `examples/demo-root/` (two tiny fake applications, safe to send to an LLM provider).
 - `docs/ui-spec.md` — global design system (tokens, components, accessibility, i18n, themes). Takes precedence over feature specs on global UI decisions. Exact dependency versions live in `pyproject.toml`/`package.json`, never in the docs.
 
 ## Architecture (overview)

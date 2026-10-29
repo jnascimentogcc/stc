@@ -36,6 +36,7 @@ Python (FastAPI, Typer CLI), PostgreSQL 17 + pgvector, tree-sitter, an MCP serve
 | [docs/functional-spec.md](docs/functional-spec.md) | What the system does: requirements, acceptance criteria, open questions |
 | [docs/tech-stack.md](docs/tech-stack.md) | Architecture, data model, indexing pipeline, AI providers, deployment |
 | [docs/ui-spec.md](docs/ui-spec.md) | Global UI design system and patterns |
+| [docs/getting-started.md](docs/getting-started.md) | Run the pipeline on the demo applications, step by step |
 
 ## Contributing
 
