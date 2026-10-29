@@ -27,8 +27,10 @@ from stc.providers import (
     build_embeddings_client,
     build_llm_client,
 )
+from stc.query.cli import query_app
 
 app = typer.Typer(no_args_is_help=True, help="STC — Talk is cheap. Show me the code.")
+app.add_typer(query_app, name="query")
 
 
 def _not_implemented(name: str) -> NoReturn:

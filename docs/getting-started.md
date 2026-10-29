@@ -130,7 +130,26 @@ uv run stc map
 With many applications, `uv run stc catalog --all --dry-run` prints one line per application and
 the total estimate; drop `--dry-run` to generate them all (already up-to-date ones are skipped).
 
-## 9. Check the result in the database
+## 9. Ask the query engine
+
+The same functions the chat and the MCP server will use are available from the command line
+(`--json` prints the structured result, every result lists file and lines):
+
+```bash
+uv run stc query apps
+uv run stc query deps demo-web
+uv run stc query grep greet -i
+uv run stc query symbol greet --contains
+uv run stc query read demo-api app.py --start 1 --end 8
+uv run stc query search "endpoint that greets a person"
+uv run stc query read demo-api credentials.json
+```
+
+The last one must be refused (`forbidden`): the file holds a fake secret. `search` embeds your
+question with the embeddings provider (a tiny call) and combines it with text and name matches;
+without embeddings in the database it says so and uses text only.
+
+## 10. Check the result in the database
 
 ```bash
 docker exec stc-dev-db psql -U postgres -d stc -c "select provider, model, vector_dims(embedding) as dims, count(*) from chunk_embeddings group by 1,2,3"
@@ -142,7 +161,7 @@ Expect one row: your provider and model, `1536`, and `10`. To see how the code w
 docker exec stc-dev-db psql -U postgres -d stc -c "select f.path, c.kind, c.name, c.start_line, c.end_line from chunks c join files f on f.id = c.file_id order by f.path, c.start_line"
 ```
 
-## 10. Clean up
+## 11. Clean up
 
 ```bash
 docker rm -f stc-dev-db
