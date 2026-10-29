@@ -8,9 +8,10 @@ import psycopg
 import typer
 
 from stc import __version__
-from stc.config import get_settings
+from stc.config import Settings, get_settings
 from stc.db.migrate import MigrationError, migrate
 from stc.indexer.chunk_store import chunk_pending
+from stc.indexer.embed_store import embed_pending, estimate_pending
 from stc.indexer.pipeline import detect_root, scan_root
 from stc.indexer.registry import sync_registry
 from stc.indexer.rootconfig import ConfigError
@@ -48,6 +49,12 @@ def _resolve_root(root: Path | None) -> Path:
 
 RootOption = Annotated[Path | None, typer.Option("--root", help="Folder with the applications.")]
 
+YesOption = Annotated[
+    bool, typer.Option("--yes", help="Do not ask for confirmation of a large embedding run.")
+]
+# Above this many estimated tokens the embedding run asks for confirmation (LCY-07).
+CONFIRM_TOKENS = 1_000_000
+
 
 @app.command()
 def detect(root: RootOption = None) -> None:
@@ -73,8 +80,12 @@ def index(
     prune: Annotated[
         bool, typer.Option("--prune", help="Remove applications that are no longer in the Root.")
     ] = False,
+    skip_embeddings: Annotated[
+        bool, typer.Option("--skip-embeddings", help="Stop after chunking.")
+    ] = False,
+    yes: YesOption = False,
 ) -> None:
-    """Detect applications, apply hygiene, register and chunk files (later stages not built)."""
+    """Detect, apply hygiene, register, chunk and embed (catalogs and relations not built yet)."""
     root = _resolve_root(root)
     try:
         scanned = scan_root(root)
@@ -127,12 +138,63 @@ def index(
             "run `stc index` again.",
             err=True,
         )
+    if not skip_embeddings:
+        _embed_stage(settings, dry_run=False, yes=yes, soft=True)
     if result.apps_missing:
         typer.echo(
             "Not found in the Root (kept; use --prune to remove): "
             + ", ".join(result.apps_missing),
             err=True,
         )
+
+
+def _embed_stage(settings: Settings, *, dry_run: bool, yes: bool, soft: bool = False) -> None:
+    """Embed pending chunks. `soft` (used by `stc index`) turns missing provider configuration
+    into a warning, since everything before this stage already succeeded."""
+    if settings.db_url is None:
+        typer.echo("STC_DB_URL is not set.", err=True)
+        raise typer.Exit(code=2)
+    provider, model = settings.embeddings_provider, settings.embeddings_model or "(not set)"
+    try:
+        with psycopg.connect(settings.db_url) as conn:
+            estimate = estimate_pending(conn, provider, model)
+            typer.echo(
+                f"Embeddings: {estimate.chunks} chunk(s) to embed with {provider}/{model}, "
+                f"about {estimate.tokens:,} tokens (rough estimate)."
+            )
+            if dry_run or estimate.chunks == 0:
+                return
+            try:
+                client = build_embeddings_client(settings)
+            except ProviderError as exc:
+                if soft:
+                    typer.echo(f"Embeddings skipped: {exc}", err=True)
+                    return
+                raise
+            if estimate.tokens > CONFIRM_TOKENS and not yes:
+                typer.confirm("Continue?", abort=True)
+            stats = asyncio.run(embed_pending(conn, client, concurrency=settings.concurrency))
+    except ProviderError as exc:
+        typer.echo(f"Embedding failed: {exc} (progress is kept; run again to resume)", err=True)
+        raise typer.Exit(code=1) from exc
+    except psycopg.Error as exc:
+        typer.echo(f"Database error while embedding: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(
+        f"Embedded {stats.chunks_embedded} chunk(s) ({stats.chunks_replaced} replaced stale "
+        f"vectors) in {stats.requests} request(s), {stats.retries} retried."
+    )
+
+
+@app.command()
+def embed(
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Only estimate what would be embedded.")
+    ] = False,
+    yes: YesOption = False,
+) -> None:
+    """Embed chunks that have no vector yet (or a stale one) using the configured provider."""
+    _embed_stage(get_settings(), dry_run=dry_run, yes=yes)
 
 
 @app.command(name="check-providers")
