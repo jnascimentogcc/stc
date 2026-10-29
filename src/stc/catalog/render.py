@@ -26,6 +26,29 @@ class CatalogMeta:
     status: str  # complete | partial
 
 
+def append_manual(markdown: str, section: str, text: str) -> str:
+    """Add `text` to the maintainers' block of `section`, after what is already there. Adding the
+    same text twice changes nothing. Raises `KeyError` if the file has no block for the section."""
+    addition = text.strip()
+    found = False
+
+    def replace(match: re.Match[str]) -> str:
+        nonlocal found
+        if match.group(1) != section:
+            return match.group(0)
+        found = True
+        body = match.group(2).strip()
+        if addition in body:
+            return match.group(0)
+        merged = f"{body}\n\n{addition}" if body else addition
+        return f"<!-- stc:manual:begin section={section} -->\n{merged}\n<!-- stc:manual:end -->"
+
+    updated = _MANUAL.sub(replace, markdown)
+    if not found:
+        raise KeyError(section)
+    return updated
+
+
 def parse_manual_blocks(markdown: str) -> dict[str, str]:
     """Section id -> text written by maintainers (empty blocks are omitted)."""
     return {

@@ -269,7 +269,38 @@ uv run stc catalog --all          # regenerates the catalogs whose inputs change
 uv run stc status                 # the last runs, with their outcome
 ```
 
-## 16. Run everything with Docker Compose
+## 16. Improve what the system knows
+
+**Uncertain relations.** Static analysis rates some relations low or medium (a call through an
+environment variable, a shared topic name). Let the model confirm or reject them; it only judges
+what was already found, using the code around the evidence:
+
+```bash
+uv run stc relations --confirm --dry-run    # how many, and about how many tokens
+uv run stc relations --confirm
+uv run stc relations                        # each relation with the verdict and the reason
+```
+
+A confirmed relation counts as high confidence; a rejected one disappears from the map, the
+catalogs and the queries (and is not judged again). Run `stc catalog --all` afterwards so the
+catalogs stop mentioning rejected ones.
+
+**Corrections from the chat.** When an answer is wrong, click *Incorrect* or *Incomplete* and
+write what is right. Tick *Also propose this as a correction to an application's catalog* and pick
+the application and the section. Nothing changes yet. You review the proposals:
+
+```bash
+uv run stc corrections list
+uv run stc corrections approve 3 --note "Checked with the team"
+uv run stc corrections reject 4
+```
+
+Approving writes the text into that section's manual block in `catalogs/<application>.md`: it is
+shown first, kept on every regeneration and given to the model as authoritative. Run
+`stc catalog <application>` to regenerate the section with it. `stc status` tells you when proposals
+are waiting.
+
+## 17. Run everything with Docker Compose
 
 Instead of steps 1 to 14 on your machine, the whole system can run in containers: database,
 migrations, API, MCP server and the chat UI. In `.env` set `POSTGRES_PASSWORD`,
@@ -288,7 +319,7 @@ The chat is at <http://localhost:8080>, the API at <http://localhost:8000> and t
 at <http://localhost:8765/mcp> (send `Authorization: Bearer <STC_MCP_TOKEN>`); all are bound to
 `127.0.0.1`. Any `stc` command works through `docker compose run --rm cli <command>`.
 
-## 17. Clean up
+## 18. Clean up
 
 ```bash
 docker rm -f stc-dev-db       # the throwaway database of steps 1 to 14

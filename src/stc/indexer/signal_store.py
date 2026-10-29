@@ -139,7 +139,8 @@ def sync_relations(conn: psycopg.Connection, drafts: list[RelationDraft]) -> Rel
                 conn.execute(
                     "UPDATE relations SET detail = %s, evidence_file_id = %s,"
                     " evidence_start_line = %s, evidence_end_line = %s, confidence = %s,"
-                    " evidence_count = %s WHERE id = %s",
+                    " evidence_count = %s, llm_verdict = NULL, llm_reason = NULL,"
+                    " confirmed_by_llm = false WHERE id = %s",
                     (*values, current[0]),
                 )
                 stats.updated += 1
@@ -156,7 +157,7 @@ def list_relations(conn: psycopg.Connection) -> list[tuple[str, str, str, str, s
         "SELECT s.name, t.name, r.type, r.confidence, r.detail,"
         " COALESCE(sa.name || '/' || f.path || ':' || r.evidence_start_line || '-'"
         " || r.evidence_end_line, ''), r.evidence_count"
-        " FROM relations r JOIN applications s ON s.id = r.source_app_id"
+        " FROM active_relations r JOIN applications s ON s.id = r.source_app_id"
         " JOIN applications t ON t.id = r.target_app_id"
         " LEFT JOIN files f ON f.id = r.evidence_file_id"
         " LEFT JOIN applications sa ON sa.id = f.application_id"
@@ -168,12 +169,45 @@ def list_relations(conn: psycopg.Connection) -> list[tuple[str, str, str, str, s
     ]
 
 
+@dataclass(frozen=True)
+class RelationRow:
+    source: str
+    target: str
+    type: str
+    confidence: str  # as derived by static analysis
+    detail: str
+    evidence: str
+    evidence_count: int
+    verdict: str | None  # LLM verdict: confirmed | rejected | unsure
+    reason: str | None
+
+
+def relation_report(conn: psycopg.Connection) -> list[RelationRow]:
+    """Every relation, including the ones the model rejected, with its verdict."""
+    rows = conn.execute(
+        "SELECT s.name, t.name, r.type, r.confidence, r.detail,"
+        " COALESCE(sa.name || '/' || f.path || ':' || r.evidence_start_line || '-'"
+        " || r.evidence_end_line, ''), r.evidence_count, r.llm_verdict, r.llm_reason"
+        " FROM relations r JOIN applications s ON s.id = r.source_app_id"
+        " JOIN applications t ON t.id = r.target_app_id"
+        " LEFT JOIN files f ON f.id = r.evidence_file_id"
+        " LEFT JOIN applications sa ON sa.id = f.application_id"
+        " ORDER BY s.name, t.name, r.type"
+    ).fetchall()
+    return [
+        RelationRow(str(a), str(b), str(c), str(d), str(e or ""), str(g), int(n), v, why)
+        for a, b, c, d, e, g, n, v, why in rows
+    ]
+
+
 __all__ = [
     "AppRef",
+    "RelationRow",
     "RelationStats",
     "SignalStats",
     "extract_pending",
     "list_relations",
+    "relation_report",
     "rebuild_relations",
     "signals_key",
     "sync_relations",

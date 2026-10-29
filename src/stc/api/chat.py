@@ -16,6 +16,8 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from stc.catalog import corrections
+from stc.catalog.model import SECTION_ORDER, SECTION_TITLES
 from stc.chat import store
 from stc.chat.agent import run_agent
 from stc.config import Settings
@@ -56,6 +58,12 @@ class ConversationUpdate(BaseModel):
 
 class MessageCreate(BaseModel):
     content: str = Field(min_length=1, max_length=8_000)
+
+
+class ProposalCreate(BaseModel):
+    application: str
+    section: str
+    text: str | None = Field(default=None, max_length=4_000)  # default: the feedback's correction
 
 
 class FeedbackCreate(BaseModel):
@@ -250,5 +258,30 @@ def build_chat_router(
         if created is None:
             raise not_found("Message")
         return created
+
+    @router.get("/catalog-sections")
+    async def catalog_sections() -> list[dict[str, str]]:
+        """The sections of a catalog, for choosing what a correction is about."""
+        return [{"id": key, "title": SECTION_TITLES[key]} for key in SECTION_ORDER]
+
+    @router.post("/feedback/{feedback_id}/proposal", status_code=201)
+    async def propose_correction(feedback_id: int, body: ProposalCreate) -> dict[str, Any]:
+        """Propose the correction of a piece of feedback as a change to a catalog section. It is
+        only a proposal: a maintainer approves it from the command line (CHT-10)."""
+
+        def create(conn: psycopg.Connection) -> dict[str, Any]:
+            found = corrections.propose(
+                conn, feedback_id, body.application, body.section, body.text
+            )
+            return {
+                "id": found.id,
+                "feedback_id": found.feedback_id,
+                "application": found.application,
+                "section": found.section,
+                "text": found.text,
+                "status": found.status,
+            }
+
+        return await db(create)
 
     return router

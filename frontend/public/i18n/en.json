@@ -48,6 +48,12 @@
     "whatIsMissing": "What is missing?",
     "optional": "optional",
     "sendFeedback": "Send feedback",
-    "feedbackSaved": "Thanks, your feedback was saved."
+    "feedbackSaved": "Thanks, your feedback was saved.",
+    "feedbackAndProposalSaved": "Thanks, your feedback was saved and the proposed correction waits for a maintainer to approve it.",
+    "proposeTitle": "Correct the catalog",
+    "proposeToggle": "Also propose this as a correction to an application's catalog",
+    "proposeHelp": "It changes nothing until a maintainer approves it. Once approved, the text is kept in that section and used as authoritative when the catalog is regenerated.",
+    "proposeApplication": "Application",
+    "proposeSection": "Section"
   }
 }

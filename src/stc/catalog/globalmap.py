@@ -45,7 +45,7 @@ class _Relation:
     evidence: str
 
 
-def _purpose_line(content: str | None) -> str | None:
+def purpose_line(content: str | None) -> str | None:
     for line in (content or "").splitlines():
         match = _PURPOSE_LINE.match(line)
         if match:
@@ -60,14 +60,14 @@ def _load_apps(conn: psycopg.Connection) -> list[_App]:
         " LEFT JOIN catalog_sections cs ON cs.catalog_id = c.id AND cs.section = 'purpose'"
         " ORDER BY a.name"
     ).fetchall()
-    return [_App(r[0], r[1], r[2], r[3], _purpose_line(r[5]), bool(r[4])) for r in rows]
+    return [_App(r[0], r[1], r[2], r[3], purpose_line(r[5]), bool(r[4])) for r in rows]
 
 
 def _load_relations(conn: psycopg.Connection, names: dict[int, str]) -> list[_Relation]:
     rows = conn.execute(
         "SELECT r.source_app_id, r.target_app_id, r.type, r.confidence, COALESCE(r.detail, ''),"
         " fa.name, f.path, r.evidence_start_line, r.evidence_end_line"
-        " FROM relations r LEFT JOIN files f ON f.id = r.evidence_file_id"
+        " FROM active_relations r LEFT JOIN files f ON f.id = r.evidence_file_id"
         " LEFT JOIN applications fa ON fa.id = f.application_id"
         " ORDER BY r.source_app_id, r.target_app_id, r.type"
     ).fetchall()

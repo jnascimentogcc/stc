@@ -2,6 +2,8 @@
 
 import asyncio
 import json
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Annotated
 
@@ -10,6 +12,10 @@ import typer
 
 from stc import __version__
 from stc.catalog.context import UnknownApplication
+from stc.catalog.corrections import Correction, list_corrections
+from stc.catalog.corrections import approve as approve_correction
+from stc.catalog.corrections import pending_count as pending_corrections
+from stc.catalog.corrections import reject as reject_correction
 from stc.catalog.embed import embed_sections, estimate_sections
 from stc.catalog.globalmap import write_global_map
 from stc.catalog.model import LLM_SECTIONS
@@ -17,6 +23,8 @@ from stc.catalog.store import Prepared, generate_and_store, prepare
 from stc.config import Settings, get_settings
 from stc.db.migrate import MigrationError, migrate
 from stc.indexer.chunk_store import chunk_pending
+from stc.indexer.confirm import candidates, confirm_relations
+from stc.indexer.confirm import estimate_tokens as estimate_confirm
 from stc.indexer.embed_store import EmbedStats, embed_pending, estimate_pending
 from stc.indexer.pipeline import detect_root, host_aliases, scan_root
 from stc.indexer.registry import sync_registry
@@ -27,8 +35,8 @@ from stc.indexer.signal_store import (
     RelationStats,
     SignalStats,
     extract_pending,
-    list_relations,
     rebuild_relations,
+    relation_report,
 )
 from stc.providers import (
     LLMClient,
@@ -39,6 +47,7 @@ from stc.providers import (
     closing,
 )
 from stc.query.cli import query_app
+from stc.query.models import QueryError
 
 app = typer.Typer(no_args_is_help=True, help="STC — Talk is cheap. Show me the code.")
 app.add_typer(query_app, name="query")
@@ -394,8 +403,22 @@ def relations(
     refresh: Annotated[
         bool, typer.Option("--refresh", help="Re-extract signals and re-derive before listing.")
     ] = False,
+    confirm: Annotated[
+        bool,
+        typer.Option(
+            "--confirm",
+            help="Ask the LLM to confirm or reject the low and medium confidence relations.",
+        ),
+    ] = False,
+    recheck: Annotated[
+        bool, typer.Option("--recheck", help="With --confirm: also judge the ones left 'unsure'.")
+    ] = False,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="With --confirm: only show what would be sent.")
+    ] = False,
+    yes: YesOption = False,
 ) -> None:
-    """List the relations between applications, with confidence and evidence."""
+    """List the relations between applications, with confidence, evidence and LLM verdicts."""
     settings = get_settings()
     if settings.db_url is None:
         typer.echo("STC_DB_URL is not set.", err=True)
@@ -403,16 +426,73 @@ def relations(
     if refresh:
         _relations_stage(settings, _resolve_root(root))
     try:
+        if confirm:
+            _confirm_stage(settings, recheck=recheck, dry_run=dry_run, yes=yes)
         with psycopg.connect(settings.db_url) as conn:
-            rows = list_relations(conn)
+            rows = relation_report(conn)
     except psycopg.Error as exc:
         typer.echo(f"Database error: {exc}", err=True)
         raise typer.Exit(code=1) from exc
-    for source, target, type_, confidence, detail, evidence, count in rows:
-        arrow = "<->" if type_ == "shared_database" else "->"
-        typer.echo(f"{source} {arrow} {target}  [{type_}, {confidence}]  {detail}")
-        typer.echo(f"    evidence: {evidence} ({count} signal(s))")
-    typer.echo(f"{len(rows)} relation(s).", err=True)
+    for row in rows:
+        arrow = "<->" if row.type == "shared_database" else "->"
+        marks = {"confirmed": ", confirmed by the LLM", "rejected": ", REJECTED by the LLM"}
+        typer.echo(
+            f"{row.source} {arrow} {row.target}  [{row.type}, {row.confidence}"
+            f"{marks.get(row.verdict or '', '')}]  {row.detail}"
+        )
+        typer.echo(f"    evidence: {row.evidence} ({row.evidence_count} signal(s))")
+        if row.verdict and row.reason:
+            typer.echo(f"    LLM ({row.verdict}): {row.reason}")
+    hidden = sum(1 for r in rows if r.verdict == "rejected")
+    typer.echo(
+        f"{len(rows)} relation(s)"
+        + (f", {hidden} rejected (hidden elsewhere)." if hidden else "."),
+        err=True,
+    )
+
+
+def _confirm_stage(settings: Settings, *, recheck: bool, dry_run: bool, yes: bool) -> None:
+    """LLM confirmation of the uncertain relations; only shows the cost with `dry_run`."""
+    assert settings.db_url is not None
+    provider = settings.llm_provider
+    model = settings.llm_catalog_model or "(not set)"
+    try:
+        with psycopg.connect(settings.db_url, autocommit=True) as conn:
+            items = candidates(conn, recheck=recheck)
+            tokens_in, tokens_out = estimate_confirm(items)
+            typer.echo(
+                f"{len(items)} relation(s) of low or medium confidence to check with "
+                f"{provider}/{model}; about {tokens_in:,} input and {tokens_out:,} output tokens "
+                "(rough estimate).",
+                err=True,
+            )
+            if dry_run or not items:
+                return
+            try:
+                llm = build_llm_client(settings, "catalog")
+            except ProviderError as exc:
+                typer.echo(f"Cannot confirm relations: {exc}", err=True)
+                raise typer.Exit(code=1) from exc
+            if tokens_in > CONFIRM_TOKENS and not yes:
+                typer.confirm("Continue?", abort=True)
+            stats = asyncio.run(
+                closing(confirm_relations(conn, llm, items, concurrency=settings.concurrency), llm)
+            )
+    except psycopg.Error as exc:
+        typer.echo(f"Database error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(
+        f"Checked {stats.checked}: {stats.confirmed} confirmed, {stats.rejected} rejected, "
+        f"{stats.unsure} unsure; {stats.failed} could not be judged (offered again next time). "
+        f"{stats.input_tokens:,} input and {stats.output_tokens:,} output tokens used.",
+        err=True,
+    )
+    if stats.rejected:
+        typer.echo(
+            "Rejected relations are hidden from the map, the catalogs and the queries; run "
+            "`stc catalog --all` to refresh the catalogs that mentioned them.",
+            err=True,
+        )
 
 
 @app.command()
@@ -503,6 +583,12 @@ def status(
                 pending_sections = estimate_sections(
                     conn, provider, model, application=application
                 ).sections
+            unjudged_row = conn.execute(
+                "SELECT count(*) FROM relations WHERE origin = 'static' AND llm_verdict IS NULL"
+                " AND confidence IN ('low', 'medium')"
+            ).fetchone()
+            unjudged = int(unjudged_row[0]) if unjudged_row else 0
+            proposals = pending_corrections(conn)
             changes = pending_changes(conn, scanned) if scanned is not None else None
             gone = removed_applications(conn, scanned) if scanned and not application else []
     except psycopg.Error as exc:
@@ -537,6 +623,15 @@ def status(
         todo.append(f"incomplete catalog: {', '.join(partial)} (run `stc catalog` again)")
     if outdated:
         todo.append(f"catalog older than the code: {', '.join(outdated)} (`stc catalog`)")
+    if unjudged:
+        todo.append(
+            f"{unjudged} uncertain relation(s) not checked by the LLM (`stc relations --confirm`)"
+        )
+    if proposals:
+        todo.append(
+            f"{proposals} catalog correction(s) proposed from the chat wait for you "
+            "(`stc corrections list`)"
+        )
     if changes is not None:
         for change in changes:
             if change.any:
@@ -765,6 +860,85 @@ def ask(
     typer.echo(str(done["answer"]))
     for warning in done["warnings"]:  # type: ignore[attr-defined]
         typer.echo(f"warning: {warning}", err=True)
+
+
+corrections_app = typer.Typer(
+    no_args_is_help=True, help="Review the catalog corrections proposed from the chat (CHT-10)."
+)
+app.add_typer(corrections_app, name="corrections")
+
+
+@contextmanager
+def _corrections_db() -> Iterator[psycopg.Connection]:
+    settings = get_settings()
+    if settings.db_url is None:
+        typer.echo("STC_DB_URL is not set.", err=True)
+        raise typer.Exit(code=2)
+    try:
+        with psycopg.connect(settings.db_url, autocommit=True) as conn:
+            yield conn
+    except QueryError as exc:
+        typer.echo(exc.message, err=True)
+        raise typer.Exit(code=2 if exc.code != "not_found" else 1) from exc
+    except psycopg.Error as exc:
+        typer.echo(f"Database error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+def _show_correction(c: Correction, *, full: bool) -> None:
+    typer.echo(f"#{c.id} [{c.status}] {c.application} / {c.section}  ({c.created_at:%Y-%m-%d})")
+    shown = c.text if full else (c.text[:120] + ("..." if len(c.text) > 120 else ""))
+    typer.echo(f"    correction: {shown}")
+    if full and c.question:
+        typer.echo(f"    asked:      {c.question[:300]}")
+    if full and c.answer:
+        typer.echo(f"    answered:   {c.answer[:300]}{'...' if len(c.answer) > 300 else ''}")
+    if c.note:
+        typer.echo(f"    note:       {c.note}")
+
+
+@corrections_app.command("list")
+def corrections_list(
+    status: Annotated[
+        str | None, typer.Option(help="proposed, approved or rejected (default: all).")
+    ] = "proposed",
+    all_statuses: Annotated[bool, typer.Option("--all", help="Every status.")] = False,
+) -> None:
+    """List correction proposals (the ones waiting by default)."""
+    with _corrections_db() as conn:
+        found = list_corrections(conn, None if all_statuses else status)
+    for item in found:
+        _show_correction(item, full=True)
+    typer.echo(f"{len(found)} correction(s).", err=True)
+
+
+@corrections_app.command("approve")
+def corrections_approve(
+    correction_id: Annotated[int, typer.Argument(help="The number shown by `list`.")],
+    note: Annotated[str | None, typer.Option(help="Why, for the record.")] = None,
+) -> None:
+    """Write a proposal into the manual block of its catalog section (it becomes authoritative)."""
+    settings = get_settings()
+    with _corrections_db() as conn:
+        done = approve_correction(conn, settings.catalogs, correction_id, note)
+    typer.echo(
+        f"Approved #{done.id}: written to the {done.section!r} section of {done.application}."
+    )
+    typer.echo(
+        f"Run `stc catalog {done.application}` to regenerate it with the correction as authority.",
+        err=True,
+    )
+
+
+@corrections_app.command("reject")
+def corrections_reject(
+    correction_id: Annotated[int, typer.Argument(help="The number shown by `list`.")],
+    note: Annotated[str | None, typer.Option(help="Why, for the record.")] = None,
+) -> None:
+    """Discard a proposal; the catalog is not changed."""
+    with _corrections_db() as conn:
+        done = reject_correction(conn, correction_id, note)
+    typer.echo(f"Rejected #{done.id}.")
 
 
 @app.command()

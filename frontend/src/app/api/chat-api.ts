@@ -2,12 +2,14 @@ import { Injectable } from '@angular/core';
 import { readSse } from './sse';
 import {
   Application,
+  CatalogSection,
   ChatEvent,
   Conversation,
   Feedback,
   FileSlice,
   Message,
   Profile,
+  Proposal,
 } from './models';
 
 export class ApiError extends Error {
@@ -92,6 +94,19 @@ export class ChatApi {
     correction: string | null,
   ): Promise<Feedback> {
     return this.request('POST', `/messages/${messageId}/feedback`, { rating, correction });
+  }
+
+  catalogSections(): Promise<CatalogSection[]> {
+    return this.request('GET', '/catalog-sections');
+  }
+
+  proposeCorrection(
+    feedbackId: number,
+    application: string,
+    section: string,
+    text: string | null,
+  ): Promise<Proposal> {
+    return this.request('POST', `/feedback/${feedbackId}/proposal`, { application, section, text });
   }
 
   fileSlice(

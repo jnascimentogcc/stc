@@ -39,6 +39,11 @@ function api(overrides: Partial<Record<keyof ChatApi, unknown>> = {}) {
       updateConversation: async () => ({}),
       deleteConversation: async () => undefined,
       feedback: async () => ({ id: 1 }),
+      catalogSections: async () => [
+        { id: 'purpose', title: 'Functional purpose' },
+        { id: 'stack', title: 'Stack and versions' },
+      ],
+      proposeCorrection: async () => ({ id: 1 }),
       fileSlice: async () => ({
         source: {
           application: 'demo-web',
@@ -266,6 +271,91 @@ describe('MessageViewComponent feedback', () => {
     click('Send feedback');
     await vi.waitFor(() => expect(text(root)).toContain('your feedback was saved'));
     expect(feedback).toHaveBeenCalledWith(9, 'incorrect', 'It is Y');
+  });
+
+  it('can also propose the correction for a catalog section, once a text is written', async () => {
+    const feedback = vi.fn(async () => ({ id: 41 }));
+    const proposeCorrection = vi.fn(async () => ({ id: 1 }));
+    TestBed.configureTestingModule({
+      providers: [provideTestTransloco(), api({ feedback, proposeCorrection })],
+    });
+    TestBed.inject(ChatStore).applications.set([
+      { name: 'demo-api', has_catalog: true },
+      { name: 'demo-web', has_catalog: true },
+    ]);
+    const fixture = TestBed.createComponent(MessageViewComponent);
+    fixture.componentRef.setInput('message', {
+      ...answer,
+      citations: [
+        {
+          ref: 'demo-web/a.ts:1-2',
+          verified: true,
+          application: 'demo-web',
+          file: 'a.ts',
+          start_line: 1,
+          end_line: 2,
+        },
+      ],
+    });
+    await fixture.whenStable();
+    const root = fixture.nativeElement as HTMLElement;
+    [...root.querySelectorAll('button')].find((b) => text(b).trim() === 'Incorrect')!.click();
+    await fixture.whenStable();
+    expect(root.querySelector('fieldset')).toBeNull(); // nothing to propose before a text exists
+
+    const field = root.querySelector('textarea') as HTMLTextAreaElement;
+    field.value = 'It is Y';
+    field.dispatchEvent(new Event('input'));
+    await fixture.whenStable();
+    const toggle = root.querySelector('fieldset input[type=checkbox]') as HTMLInputElement;
+    toggle.checked = true;
+    toggle.dispatchEvent(new Event('change'));
+    await vi.waitFor(() => expect(root.querySelectorAll('fieldset select')).toHaveLength(2));
+    await fixture.whenStable();
+    const [application, section] = [
+      ...root.querySelectorAll('fieldset select'),
+    ] as HTMLSelectElement[];
+    expect(application.value).toBe('demo-web'); // the application the answer cited
+    expect(section.value).toBe('purpose');
+    section.value = 'stack';
+    section.dispatchEvent(new Event('change'));
+
+    root.querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
+    await vi.waitFor(() => expect(text(root)).toContain('waits for a maintainer to approve'));
+    expect(feedback).toHaveBeenCalledWith(9, 'incorrect', 'It is Y');
+    expect(proposeCorrection).toHaveBeenCalledWith(41, 'demo-web', 'stack', 'It is Y');
+  });
+
+  it('keeps the feedback and says why when the proposal is refused', async () => {
+    TestBed.configureTestingModule({
+      providers: [
+        provideTestTransloco(),
+        api({
+          proposeCorrection: async () => {
+            throw new Error('refused');
+          },
+        }),
+      ],
+    });
+    TestBed.inject(ChatStore).applications.set([{ name: 'demo-api', has_catalog: true }]);
+    const fixture = TestBed.createComponent(MessageViewComponent);
+    fixture.componentRef.setInput('message', answer);
+    await fixture.whenStable();
+    const root = fixture.nativeElement as HTMLElement;
+    [...root.querySelectorAll('button')].find((b) => text(b).trim() === 'Incorrect')!.click();
+    await fixture.whenStable();
+    const field = root.querySelector('textarea') as HTMLTextAreaElement;
+    field.value = 'It is Y';
+    field.dispatchEvent(new Event('input'));
+    await fixture.whenStable();
+    const toggle = root.querySelector('fieldset input[type=checkbox]') as HTMLInputElement;
+    toggle.checked = true;
+    toggle.dispatchEvent(new Event('change'));
+    await vi.waitFor(() => expect(root.querySelectorAll('fieldset select')).toHaveLength(2));
+    root.querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
+    await vi.waitFor(() => expect(text(root)).toContain('your feedback was saved'));
+    expect(root.querySelector('[role=alert]')).not.toBeNull();
+    expect(text(root)).not.toContain('waits for a maintainer');
   });
 
   it('shows the problem and keeps the form when saving fails', async () => {

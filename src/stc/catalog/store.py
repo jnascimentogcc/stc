@@ -90,7 +90,7 @@ def _inputs_sha256(
     ):
         digest.update(f"f|{path}|{sha}\n".encode())
     for row in conn.execute(
-        "SELECT source_app_id, target_app_id, type, confidence, detail FROM relations"
+        "SELECT source_app_id, target_app_id, type, confidence, detail FROM active_relations"
         " WHERE source_app_id = %s OR target_app_id = %s ORDER BY 1, 2, 3",
         (app_id, app_id),
     ):
@@ -229,7 +229,7 @@ def _integrations_markdown(conn: psycopg.Connection, app_id: int, name: str) -> 
     rows = conn.execute(
         "SELECT s.id, s.name, t.id, t.name, r.type, r.confidence, r.detail, fa.name, f.path,"
         " r.evidence_start_line, r.evidence_end_line"
-        " FROM relations r JOIN applications s ON s.id = r.source_app_id"
+        " FROM active_relations r JOIN applications s ON s.id = r.source_app_id"
         " JOIN applications t ON t.id = r.target_app_id"
         " LEFT JOIN files f ON f.id = r.evidence_file_id"
         " LEFT JOIN applications fa ON fa.id = f.application_id"

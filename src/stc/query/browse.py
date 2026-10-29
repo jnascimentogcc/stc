@@ -64,7 +64,7 @@ def list_applications(
     if related_to:
         require_application(conn, related_to)
         clauses.append(
-            "EXISTS (SELECT 1 FROM relations r JOIN applications o ON o.name = %s"
+            "EXISTS (SELECT 1 FROM active_relations r JOIN applications o ON o.name = %s"
             " WHERE (r.source_app_id = a.id AND r.target_app_id = o.id)"
             " OR (r.target_app_id = a.id AND r.source_app_id = o.id))"
         )
@@ -205,11 +205,11 @@ def _walk(
         WITH RECURSIVE edges AS (
             SELECT r.id, r.{frm} AS frm, r.{to} AS dst, r.type, r.confidence, r.detail,
                    r.evidence_file_id, r.evidence_start_line, r.evidence_end_line
-            FROM relations r WHERE true {type_filter}
+            FROM active_relations r WHERE true {type_filter}
             UNION ALL
             SELECT r.id, r.{to}, r.{frm}, r.type, r.confidence, r.detail,
                    r.evidence_file_id, r.evidence_start_line, r.evidence_end_line
-            FROM relations r WHERE r.type = 'shared_database' {type_filter}
+            FROM active_relations r WHERE r.type = 'shared_database' {type_filter}
         ), walk AS (
             SELECT e.*, 1 AS depth, ARRAY[%(start)s::bigint, e.dst] AS path
             FROM edges e WHERE e.frm = %(start)s
@@ -269,7 +269,7 @@ def index_status(
             (app_id,),
         ).fetchone()
         relations = conn.execute(
-            "SELECT count(*) FROM relations WHERE source_app_id = %s OR target_app_id = %s",
+            "SELECT count(*) FROM active_relations WHERE source_app_id = %s OR target_app_id = %s",
             (app_id, app_id),
         ).fetchone()
         out.append(

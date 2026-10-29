@@ -1,6 +1,13 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { ApiError, ChatApi } from '../api/chat-api';
-import { Application, ChatEvent, Conversation, Message, Profile } from '../api/models';
+import {
+  Application,
+  CatalogSection,
+  ChatEvent,
+  Conversation,
+  Message,
+  Profile,
+} from '../api/models';
 
 export interface ToolStep {
   id: string;
@@ -31,6 +38,7 @@ export class ChatStore {
 
   readonly conversations = signal<Conversation[]>([]);
   readonly applications = signal<Application[]>([]);
+  readonly sections = signal<CatalogSection[]>([]);
   readonly current = signal<Conversation | null>(null);
   readonly messages = signal<Message[]>([]);
   readonly turn = signal<Turn | null>(null);
@@ -283,16 +291,42 @@ export class ChatStore {
     }
   }
 
+  /** Flags an answer; returns the feedback id, or what went wrong. */
   async flag(
     messageId: number,
     rating: 'incorrect' | 'incomplete',
     correction: string | null,
+  ): Promise<{ id: number } | { error: string }> {
+    try {
+      const saved = await this.api.feedback(messageId, rating, correction);
+      return { id: saved.id };
+    } catch (error) {
+      return { error: describe(error) };
+    }
+  }
+
+  /** Proposes the correction of a piece of feedback as a change to a catalog section. A
+   * maintainer still has to approve it (from the command line); returns what went wrong. */
+  async propose(
+    feedbackId: number,
+    application: string,
+    section: string,
+    text: string | null,
   ): Promise<string | null> {
     try {
-      await this.api.feedback(messageId, rating, correction);
+      await this.api.proposeCorrection(feedbackId, application, section, text);
       return null;
     } catch (error) {
       return describe(error);
+    }
+  }
+
+  async loadSections(): Promise<void> {
+    if (this.sections().length > 0) return;
+    try {
+      this.sections.set(await this.api.catalogSections());
+    } catch {
+      // The form then offers no sections and a proposal cannot be made; feedback still works.
     }
   }
 }

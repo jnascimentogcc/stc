@@ -58,6 +58,20 @@ export interface Feedback {
   correction: string | null;
 }
 
+export interface CatalogSection {
+  id: string;
+  title: string;
+}
+
+export interface Proposal {
+  id: number;
+  feedback_id: number;
+  application: string;
+  section: string;
+  text: string;
+  status: string;
+}
+
 export interface DoneData {
   answer: string;
   citations: Citation[];

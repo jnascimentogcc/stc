@@ -65,6 +65,26 @@ class FakeApi {
     this.deleted.push(id);
   };
   feedback = async () => ({ id: 1, message_id: 7, rating: 'incorrect', correction: null });
+  proposals: unknown[] = [];
+  sectionCalls = 0;
+  catalogSections = async () => {
+    this.sectionCalls++;
+    return [
+      { id: 'purpose', title: 'Functional purpose' },
+      { id: 'stack', title: 'Stack and versions' },
+    ];
+  };
+  proposeCorrection = async (id: number, app: string, section: string, text: string | null) => {
+    this.proposals.push([id, app, section, text]);
+    return {
+      id: 1,
+      feedback_id: id,
+      application: app,
+      section,
+      text: text ?? '',
+      status: 'proposed',
+    };
+  };
 
   async *ask(_id: string, content: string, signal?: AbortSignal): AsyncGenerator<ChatEvent> {
     this.asked.push(content);
@@ -213,11 +233,31 @@ describe('ChatStore', () => {
     expect(store.current()).toBeNull();
   });
 
-  it('flagging an answer returns a problem message instead of throwing', async () => {
-    expect(await store.flag(7, 'incorrect', 'x')).toBeNull();
+  it('flagging an answer returns the feedback id, or a problem instead of throwing', async () => {
+    expect(await store.flag(7, 'incorrect', 'x')).toEqual({ id: 1 });
     api.feedback = async () => {
       throw new ApiError(422, 'Only answers can be flagged.');
     };
-    expect(await store.flag(1, 'incomplete', null)).toBe('Only answers can be flagged.');
+    expect(await store.flag(1, 'incomplete', null)).toEqual({
+      error: 'Only answers can be flagged.',
+    });
+  });
+
+  it('proposes a correction and reports why it was refused', async () => {
+    expect(await store.propose(1, 'a', 'purpose', 'It is X.')).toBeNull();
+    expect(api.proposals).toEqual([[1, 'a', 'purpose', 'It is X.']]);
+    api.proposeCorrection = async () => {
+      throw new ApiError(422, 'This feedback already has a proposal waiting.');
+    };
+    expect(await store.propose(1, 'a', 'purpose', null)).toBe(
+      'This feedback already has a proposal waiting.',
+    );
+  });
+
+  it('loads the catalog sections once', async () => {
+    await store.loadSections();
+    await store.loadSections();
+    expect(store.sections().map((s) => s.id)).toEqual(['purpose', 'stack']);
+    expect(api.sectionCalls).toBe(1);
   });
 });

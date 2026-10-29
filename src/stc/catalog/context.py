@@ -254,7 +254,7 @@ def _messaging_facts(conn: psycopg.Connection, app_id: int) -> list[str]:
 
 def _relation_facts(conn: psycopg.Connection, app_id: int) -> list[str]:
     rows = conn.execute(
-        "SELECT s.name, t.name, r.type, r.confidence FROM relations r"
+        "SELECT s.name, t.name, r.type, r.confidence FROM active_relations r"
         " JOIN applications s ON s.id = r.source_app_id JOIN applications t ON t.id = r.target_app_id"  # noqa: E501
         " WHERE r.source_app_id = %s OR r.target_app_id = %s ORDER BY 1, 2",
         (app_id, app_id),
