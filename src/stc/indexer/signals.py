@@ -15,7 +15,9 @@ from urllib.parse import urlsplit
 from stc.indexer.manifests import is_manifest, manifest_signals
 from stc.indexer.signal_types import Signal
 
-EXTRACTOR_VERSION = 2  # 2: Spring ${property} kept in endpoint keys; test files ignored
+EXTRACTOR_VERSION = (
+    3  # 3: routes with a TS generic or the path on the next line; 2: Spring ${property}, no tests
+)
 MAX_LINE = 2_000  # longer lines (minified code) are cut before matching
 
 # Languages whose files can contain signals; docs (markdown, text) are left out as noisy.
@@ -148,8 +150,8 @@ _PY_ROUTE = re.compile(
 _DJANGO_PATH = re.compile(r"""\b(?:re_)?path\(\s*r?(['"])([^'"]*)\1""")
 _JS_ROUTE = re.compile(
     r"""\b(?:app|router|routes?|server|fastify|\w*Router|\w*router)\.(get|post|put|delete|patch|all)"""
-    r"""\(\s*(['"`])(/[^'"`]*)\2\s*,"""
-)
+    r"""\s*(?:<[^()]*>)?\(\s*(['"`])(/[^'"`]*)\2\s*,"""
+)  # `app.post<{ Body: X }>(\n "/path", ...)`: a TypeScript generic and a path on the next line
 _JS_CHAIN = re.compile(r"""\.route\(\s*(['"`])(/[^'"`]*)\1\s*\)""")
 _NEST_CTRL = re.compile(r"""@Controller\(\s*(?:\{[^}]*path:\s*)?(['"`])([^'"`]*)\1""")
 _NEST_ROUTE = re.compile(r"""@(Get|Post|Put|Delete|Patch|All)\(\s*(?:(['"`])([^'"`]*)\2)?\s*\)""")
@@ -197,6 +199,10 @@ def _endpoints(
         return _openapi(text, lines, language)
     prefix = ""
     controller = ""
+    if language in ("javascript", "typescript"):
+        # Over the whole text: the registration may span lines (a generic, then the path).
+        for route in _JS_ROUTE.finditer(text):
+            found.append(_provides(text.count("\n", 0, route.start()) + 1, route[1], route[3]))
     for index, line in enumerate(lines):
         number = index + 1
         if language == "python":
@@ -206,8 +212,6 @@ def _endpoints(
                 for hit in _DJANGO_PATH.finditer(line):
                     found.append(_provides(number, "ANY", _django(hit[2])))
         elif language in ("javascript", "typescript"):
-            if m := _JS_ROUTE.search(line):
-                found.append(_provides(number, m[1], m[3]))
             if m := _JS_CHAIN.search(line):
                 found.append(_provides(number, "ANY", m[2]))
             if m := _NEST_CTRL.search(line):

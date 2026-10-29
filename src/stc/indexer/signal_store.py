@@ -13,6 +13,7 @@ import psycopg
 
 from stc.indexer.chunk_store import _read_verified
 from stc.indexer.properties import has_placeholder, load_properties, resolve_placeholders
+from stc.indexer.redact import REDACTION_VERSION
 from stc.indexer.relations import (
     AppRef,
     RelationDraft,
@@ -39,8 +40,12 @@ class RelationStats:
     total: int = 0
 
 
+# What a file's signals were extracted with: the extractor and the redaction rules.
+SIGNALS_VERSION = f"{EXTRACTOR_VERSION}.{REDACTION_VERSION}"
+
+
 def signals_key(content_sha256: str) -> str:
-    return f"{content_sha256}:{EXTRACTOR_VERSION}"
+    return f"{content_sha256}:{SIGNALS_VERSION}"
 
 
 def extract_pending(
@@ -53,7 +58,7 @@ def extract_pending(
         " WHERE f.status IN ('indexed', 'unsupported')"
         " AND f.signals_key IS DISTINCT FROM f.content_sha256 || ':' || %s"
         " AND (%s::text IS NULL OR a.name = %s) ORDER BY f.id",
-        (str(EXTRACTOR_VERSION), application, application),
+        (SIGNALS_VERSION, application, application),
     ).fetchall()
     for file_id, app_id, app_path, file_path, language, sha in rows:
         path = PurePosixPath(str(file_path))

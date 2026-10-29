@@ -10,6 +10,7 @@ import psycopg
 from stc.catalog.globalmap import build_global_map, global_map_path
 from stc.catalog.model import SECTION_ORDER, SECTION_TITLES
 from stc.catalog.store import catalog_path
+from stc.indexer.redact import redact
 from stc.query.common import page_args, require_application
 from stc.query.models import (
     AppStatus,
@@ -336,7 +337,8 @@ def read_file(
         raise QueryError("not_found", f"{application}/{relative} is no longer on disk.")
     data = target.read_bytes()
     stale = bool(sha) and hashlib.sha256(data).hexdigest() != sha
-    lines = data.decode("utf-8", errors="replace").splitlines()
+    # The same redaction as for indexing: a credential in a configuration file is never shown.
+    lines = redact(target.name, data.decode("utf-8", errors="replace")).text.splitlines()
     total = len(lines)
     if start_line > max(total, 1):
         raise QueryError("invalid_argument", f"The file has only {total} line(s).")

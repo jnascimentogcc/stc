@@ -12,6 +12,7 @@ from pathlib import Path, PurePosixPath
 import psycopg
 
 from stc.indexer.chunking import CHUNKER_VERSION, ChunkedFile, chunk_file
+from stc.indexer.redact import REDACTION_VERSION, redact
 
 
 @dataclass
@@ -23,10 +24,17 @@ class ChunkStats:
     chunks_kept: int = 0
     chunks_removed: int = 0
     symbols: int = 0
+    files_redacted: int = 0  # configuration files in which credential values were replaced
+    values_redacted: int = 0
+
+
+# What a file's chunks were made with: the chunker and the redaction rules (new rules mean the
+# files are read again, so a value that used to slip through is not kept).
+CHUNK_VERSION = f"{CHUNKER_VERSION}.{REDACTION_VERSION}"
 
 
 def chunk_key(content_sha256: str) -> str:
-    return f"{content_sha256}:{CHUNKER_VERSION}"
+    return f"{content_sha256}:{CHUNK_VERSION}"
 
 
 def chunk_pending(
@@ -40,13 +48,17 @@ def chunk_pending(
         " AND f.chunked_key IS DISTINCT FROM f.content_sha256 || ':' || %s"
         " AND (%s::text IS NULL OR a.name = %s)"
         " ORDER BY f.id",
-        (str(CHUNKER_VERSION), application, application),
+        (CHUNK_VERSION, application, application),
     ).fetchall()
     for file_id, app_path, file_path, language, sha in rows:
-        text = _read_verified(root / str(app_path) / str(file_path), str(sha))
-        if text is None:
+        read = read_verified(root / str(app_path) / str(file_path), str(sha))
+        if read is None:
             stats.files_skipped += 1
             continue
+        text, redacted = read
+        if redacted:
+            stats.files_redacted += 1
+            stats.values_redacted += redacted
         chunked = chunk_file(PurePosixPath(str(file_path)), text, language)
         with conn.transaction():
             _replace(conn, int(file_id), str(sha), chunked, stats)
@@ -56,14 +68,24 @@ def chunk_pending(
     return stats
 
 
-def _read_verified(path: Path, expected_sha: str) -> str | None:
+def read_verified(path: Path, expected_sha: str) -> tuple[str, int] | None:
+    """The text of a file as it was scanned, with the credential values of configuration files
+    replaced (and how many were), or None if it cannot be read or changed since the scan. This is
+    the only way indexed content leaves the disk, so what is not in the text never reaches a
+    chunk, a signal, an embedding, a catalog or an answer."""
     try:
         data = path.read_bytes()
     except OSError:
         return None
     if hashlib.sha256(data).hexdigest() != expected_sha:
         return None  # changed after the scan; the next `stc index` registers the new content
-    return data.decode("utf-8", errors="replace")
+    redacted = redact(path.name, data.decode("utf-8", errors="replace"))
+    return redacted.text, redacted.values
+
+
+def _read_verified(path: Path, expected_sha: str) -> str | None:
+    read = read_verified(path, expected_sha)
+    return read[0] if read else None
 
 
 def _replace(

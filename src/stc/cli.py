@@ -280,12 +280,20 @@ def _index_stages(
         "kept": chunks.chunks_kept,
         "removed": chunks.chunks_removed,
         "symbols": chunks.symbols,
+        "files_redacted": chunks.files_redacted,
+        "values_redacted": chunks.values_redacted,
     }
     typer.echo(
         f"Chunks: {chunks.files_chunked} file(s) chunked ({chunks.files_as_text} as text), "
         f"{chunks.chunks_new} new, {chunks.chunks_kept} kept, {chunks.chunks_removed} removed; "
         f"{chunks.symbols} symbols."
     )
+    if chunks.values_redacted:
+        typer.echo(
+            f"Redacted {chunks.values_redacted} credential value(s) in {chunks.files_redacted} "
+            "configuration file(s): the values are not stored, embedded or sent anywhere.",
+            err=True,
+        )
     if chunks.files_skipped:
         status = "partial"
         typer.echo(

@@ -17,6 +17,8 @@ from stc.catalog.context import AppContext, build_context
 from stc.catalog.generate import estimate_tokens, generate_sections
 from stc.catalog.model import SCHEMA_VERSION, SectionResult
 from stc.catalog.render import CatalogMeta, parse_manual_blocks, render_catalog, section_bodies
+from stc.indexer.chunk_store import CHUNK_VERSION
+from stc.indexer.signal_store import SIGNALS_VERSION
 from stc.providers import LLMClient
 
 
@@ -82,7 +84,10 @@ def _inputs_sha256(
     language: str,
 ) -> str:
     digest = hashlib.sha256()
-    digest.update(f"{SCHEMA_VERSION}|{provider}|{model}|{language}\n".encode())
+    # The versions of what the catalog is built from: a better chunker or extractor changes the
+    # context and the endpoint tables even when no file changed.
+    versions = f"{SCHEMA_VERSION}|{CHUNK_VERSION}|{SIGNALS_VERSION}"
+    digest.update(f"{versions}|{provider}|{model}|{language}\n".encode())
     for path, sha in conn.execute(
         "SELECT path, COALESCE(content_sha256, '') FROM files WHERE application_id = %s"
         " AND status IN ('indexed', 'unsupported') ORDER BY path",

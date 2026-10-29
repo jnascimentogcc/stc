@@ -274,3 +274,34 @@ def test_broken_or_hostile_manifests_yield_nothing() -> None:
 def test_irrelevant_files_have_no_signals() -> None:
     assert signals("README.md", "see http://billing/api/x", "markdown") == []
     assert signals("a.py", "x = 1\n", "python") == []
+
+
+def test_fastify_routes_with_a_generic_or_the_path_on_the_next_line_are_found() -> None:
+    from pathlib import PurePosixPath
+
+    from stc.indexer.signals import extract_signals
+
+    source = """import Fastify from "fastify";
+export function build(app: FastifyInstance) {
+  app.get("/health", async () => ({ ok: true }));
+  app.post<{ Body: BookBody }>("/appointments", { schema }, async (req) => ok(req));
+  app.post<{ Params: { id: string }; Body: { start: string } }>(
+    "/appointments/:id/reschedule",
+    { schema },
+    async (req) => ok(req),
+  );
+  app.patch<{ Params: { id: string } }>("/appointments/:id", handler);
+  return app;
+}
+"""
+    found = [
+        (s.detail, s.start_line)
+        for s in extract_signals(PurePosixPath("src/api/server.ts"), source, "typescript")
+        if s.role == "provides"
+    ]
+    assert found == [
+        ("GET /health", 3),
+        ("POST /appointments", 4),
+        ("POST /appointments/:id/reschedule", 5),  # the line of the call, not of the path
+        ("PATCH /appointments/:id", 10),
+    ]
