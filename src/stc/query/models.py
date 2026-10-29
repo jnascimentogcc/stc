@@ -67,6 +67,7 @@ class CatalogHit:
     snippet: str
     score: float
     code_version: str | None
+    matched_by: list[str]  # semantic | lexical
 
 
 @dataclass

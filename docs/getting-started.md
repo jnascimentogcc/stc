@@ -251,10 +251,48 @@ uv run stc evaluate --mode all
 Run it again after changing chunking, embeddings, prompts or models: it compares with the
 previous run and lists the questions that started failing or passing.
 
-## 15. Clean up
+## 15. Keep it up to date
+
+After you change code in the Root, see what the system thinks needs doing:
 
 ```bash
-docker rm -f stc-dev-db
+uv run stc status --check
+```
+
+It lists the applications that are new or gone and the files added, changed and removed since the
+last run, plus catalogs that are missing or older than the code. Then:
+
+```bash
+uv run stc index                  # reprocesses only what changed
+uv run stc reindex demo-api       # derives one application again, changed or not
+uv run stc catalog --all          # regenerates the catalogs whose inputs changed
+uv run stc status                 # the last runs, with their outcome
+```
+
+## 16. Run everything with Docker Compose
+
+Instead of steps 1 to 14 on your machine, the whole system can run in containers: database,
+migrations, API, MCP server and the chat UI. In `.env` set `POSTGRES_PASSWORD`,
+`STC_APP_PASSWORD` (letters and digits, it goes into a URL), `STC_MCP_TOKEN`, `STC_ROOT` (the
+folder with the applications on your machine, for example `./examples/demo-root`) and the
+OpenAI key and models. On Linux also set `STC_UID` and `STC_GID` to your user, so `catalogs/`
+and `data/` are yours. Then:
+
+```bash
+docker compose up -d --build
+docker compose run --rm cli index
+docker compose run --rm cli catalog --all
+```
+
+The chat is at <http://localhost:8080>, the API at <http://localhost:8000> and the MCP server
+at <http://localhost:8765/mcp> (send `Authorization: Bearer <STC_MCP_TOKEN>`); all are bound to
+`127.0.0.1`. Any `stc` command works through `docker compose run --rm cli <command>`.
+
+## 17. Clean up
+
+```bash
+docker rm -f stc-dev-db       # the throwaway database of steps 1 to 14
+docker compose down -v        # the Compose setup of step 16 (-v also deletes its database)
 ```
 
 ## Troubleshooting

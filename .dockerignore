@@ -1,0 +1,16 @@
+.git
+.venv
+.env
+.env.*
+!.env.example
+data
+catalogs
+frontend
+tests
+docs
+examples
+.claude
+**/__pycache__
+.mypy_cache
+.ruff_cache
+.pytest_cache

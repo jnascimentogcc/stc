@@ -1,5 +1,38 @@
-# Skeleton: only `db` and `api` for now. `migrate`, `worker`, `mcp` and `web` are added
-# as those components are implemented (see docs/tech-stack.md, section 8).
+# The whole system: database, migrations, API, MCP server and the chat UI.
+#
+#   cp .env.example .env        # fill in the passwords, STC_ROOT, the OpenAI key and models
+#   docker compose up -d --build
+#   open http://localhost:8080  (chat); the MCP server is at http://localhost:8765/mcp
+#
+# Indexing is a command, not a service (it runs when you decide, and costs tokens):
+#   docker compose run --rm cli index
+#   docker compose run --rm cli catalog --all
+#   docker compose run --rm cli status --check
+#   docker compose run --rm cli evaluate
+#
+# Ports are bound to 127.0.0.1 (STC_WEB_PORT, STC_API_PORT, STC_MCP_PORT change them): put a
+# reverse proxy with TLS in front before exposing them.
+# STC_ROOT in .env is the folder on this machine; inside the containers it is /root-apps (read-only).
+
+x-stc: &stc
+  build: .
+  image: stc:local
+  # Optional, so the file also works in CI with every variable set in the environment.
+  env_file:
+    - path: .env
+      required: false
+  environment: &stc-environment
+    STC_ROOT: /root-apps
+    STC_CATALOGS: /catalogs
+    STC_DATA: /data
+    STC_DB_URL: postgresql://stc_app:${STC_APP_PASSWORD:?set STC_APP_PASSWORD in .env}@db:5432/stc
+  # Files written to ./catalogs and ./data belong to you, not to root (set STC_UID/STC_GID on Linux).
+  user: "${STC_UID:-1000}:${STC_GID:-1000}"
+  volumes:
+    - ${STC_ROOT:?set STC_ROOT in .env}:/root-apps:ro
+    - ./catalogs:/catalogs
+    - ./data:/data
+
 services:
   db:
     image: pgvector/pgvector:pg17
@@ -14,22 +47,68 @@ services:
       timeout: 5s
       retries: 5
 
-  api:
-    build: .
-    env_file: .env
+  migrate:
+    <<: *stc
+    command: ["stc", "migrate-db"]
     environment:
-      STC_ROOT: /root-apps
-      STC_CATALOGS: /catalogs
-      STC_DATA: /data
-    volumes:
-      - ${STC_ROOT:?set STC_ROOT in .env}:/root-apps:ro
-      - ./catalogs:/catalogs
-      - ./data:/data
-    ports:
-      - "8000:8000"
+      <<: *stc-environment
+      STC_DB_MIGRATION_URL: postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/stc
+      STC_APP_PASSWORD: ${STC_APP_PASSWORD}
+    healthcheck:
+      disable: true
+    restart: "no"
     depends_on:
       db:
         condition: service_healthy
+
+  api:
+    <<: *stc
+    ports:
+      - "127.0.0.1:${STC_API_PORT:-8000}:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  mcp:
+    <<: *stc
+    command: ["stc", "serve-mcp", "--transport", "http", "--host", "0.0.0.0"]
+    environment:
+      <<: *stc-environment
+      STC_MCP_TOKEN: ${STC_MCP_TOKEN:?set STC_MCP_TOKEN in .env to serve MCP over HTTP}
+    healthcheck:
+      # The endpoint needs the token, so only check that it accepts connections.
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8765), 3)"]
+      interval: 30s
+      timeout: 5s
+    ports:
+      - "127.0.0.1:${STC_MCP_PORT:-8765}:8765"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  web:
+    build: ./frontend
+    image: stc-web:local
+    read_only: true
+    tmpfs:
+      - /tmp
+    ports:
+      - "127.0.0.1:${STC_WEB_PORT:-8080}:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+
+  # Not started by `up`: `docker compose run --rm cli <command>` (index, catalog, status, ...).
+  cli:
+    <<: *stc
+    entrypoint: ["stc"]
+    command: ["--help"]
+    healthcheck:
+      disable: true
+    profiles: ["tools"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
 
 volumes:
   db-data:

@@ -1,26 +1,35 @@
-"""`stc` command line. Commands not yet implemented fail with a clear message."""
+"""`stc` command line."""
 
 import asyncio
 import json
 from pathlib import Path
-from typing import Annotated, NoReturn
+from typing import Annotated
 
 import psycopg
 import typer
 
 from stc import __version__
 from stc.catalog.context import UnknownApplication
+from stc.catalog.embed import embed_sections, estimate_sections
 from stc.catalog.globalmap import write_global_map
 from stc.catalog.model import LLM_SECTIONS
 from stc.catalog.store import Prepared, generate_and_store, prepare
 from stc.config import Settings, get_settings
 from stc.db.migrate import MigrationError, migrate
 from stc.indexer.chunk_store import chunk_pending
-from stc.indexer.embed_store import embed_pending, estimate_pending
+from stc.indexer.embed_store import EmbedStats, embed_pending, estimate_pending
 from stc.indexer.pipeline import detect_root, host_aliases, scan_root
 from stc.indexer.registry import sync_registry
 from stc.indexer.rootconfig import ConfigError
-from stc.indexer.signal_store import extract_pending, list_relations, rebuild_relations
+from stc.indexer.runs import finish_run, has_finished_run, recent_runs, start_run
+from stc.indexer.scan import ScannedApplication
+from stc.indexer.signal_store import (
+    RelationStats,
+    SignalStats,
+    extract_pending,
+    list_relations,
+    rebuild_relations,
+)
 from stc.providers import (
     LLMClient,
     Message,
@@ -33,11 +42,6 @@ from stc.query.cli import query_app
 
 app = typer.Typer(no_args_is_help=True, help="STC — Talk is cheap. Show me the code.")
 app.add_typer(query_app, name="query")
-
-
-def _not_implemented(name: str) -> NoReturn:
-    typer.echo(f"`stc {name}` is not implemented yet.", err=True)
-    raise typer.Exit(code=1)
 
 
 @app.command()
@@ -95,10 +99,60 @@ def index(
     ] = False,
     yes: YesOption = False,
 ) -> None:
-    """Detect, apply hygiene, register, chunk and embed (catalogs and relations not built yet)."""
-    root = _resolve_root(root)
+    """Index the Root: detect, apply hygiene, register, chunk, derive relations and embed.
+
+    Incremental: only files that changed since the last run are reprocessed (LCY-01)."""
+    _run_index(
+        root,
+        only=None,
+        force=False,
+        dry_run=dry_run,
+        prune=prune,
+        skip_embeddings=skip_embeddings,
+        yes=yes,
+    )
+
+
+@app.command()
+def reindex(
+    application: Annotated[
+        str | None, typer.Argument(help="One application (default: the whole Root).")
+    ] = None,
+    root: RootOption = None,
+    skip_embeddings: Annotated[
+        bool, typer.Option("--skip-embeddings", help="Stop after chunking.")
+    ] = False,
+    yes: YesOption = False,
+) -> None:
+    """Reprocess one application, or the whole Root, from its files on demand (LCY-05).
+
+    Like `stc index`, but chunks and signals are derived again even for unchanged files. Vectors
+    of chunks whose content did not change are kept, so this costs no embedding calls unless the
+    code changed."""
+    _run_index(
+        root,
+        only=application,
+        force=True,
+        dry_run=False,
+        prune=False,
+        skip_embeddings=skip_embeddings,
+        yes=yes,
+    )
+
+
+def _run_index(
+    root_option: Path | None,
+    *,
+    only: str | None,
+    force: bool,
+    dry_run: bool,
+    prune: bool,
+    skip_embeddings: bool,
+    yes: bool,
+) -> None:
+    root = _resolve_root(root_option)
     try:
-        scanned = scan_root(root)
+        scanned = scan_root(root, only=only)
     except (ConfigError, ValueError) as exc:
         typer.echo(f"Indexing failed: {exc}", err=True)
         raise typer.Exit(code=1) from exc
@@ -120,13 +174,68 @@ def index(
     if settings.db_url is None:
         typer.echo("STC_DB_URL is not set (use --dry-run to scan without a database).", err=True)
         raise typer.Exit(code=2)
+
+    summary: dict[str, object] = {"applications": len(scanned), "forced": force}
+    try:
+        control = psycopg.connect(settings.db_url, autocommit=True)
+    except psycopg.Error as exc:
+        typer.echo(f"Database error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    with control:
+        kind = (
+            "application"
+            if only
+            else "full"
+            if force or not has_finished_run(control)
+            else "incremental"
+        )
+        run_id = start_run(control, kind, only)
+        try:
+            status = _index_stages(
+                settings, root, scanned, summary, only, force, prune, skip_embeddings, yes
+            )
+        except BaseException as exc:
+            finish_run(control, run_id, "failed", summary, str(exc) or type(exc).__name__)
+            raise
+        finish_run(control, run_id, status, summary)
+    typer.echo(f"Run {run_id} ({kind}): {status}.", err=True)
+
+
+def _index_stages(
+    settings: Settings,
+    root: Path,
+    scanned: list[ScannedApplication],
+    summary: dict[str, object],
+    only: str | None,
+    force: bool,
+    prune: bool,
+    skip_embeddings: bool,
+    yes: bool,
+) -> str:
+    """Registry, chunks, relations and embeddings; fills `summary`, returns the run status."""
+    assert settings.db_url is not None
+    status = "succeeded"
     try:
         with psycopg.connect(settings.db_url) as conn:
-            result = sync_registry(conn, scanned, prune=prune)
+            result = sync_registry(conn, scanned, prune=prune, partial=only is not None)
+            if force:
+                conn.execute(
+                    "UPDATE files SET chunked_key = NULL, signals_key = NULL"
+                    " WHERE application_id IN (SELECT id FROM applications WHERE name = ANY(%s))",
+                    ([a.spec.name for a in scanned],),
+                )
     except psycopg.Error as exc:
         typer.echo(f"Database error: {exc}", err=True)
         raise typer.Exit(code=1) from exc
     changed = [a for a in result.applications if a.changed]
+    summary["registry"] = {
+        "apps_added": len(result.apps_added),
+        "apps_removed": len(result.apps_removed),
+        "apps_with_changes": len(changed),
+        "files_added": sum(a.files_added for a in result.applications),
+        "files_changed": sum(a.files_changed for a in result.applications),
+        "files_removed": sum(a.files_removed for a in result.applications),
+    }
     typer.echo(
         f"Registry: {len(result.apps_added)} application(s) added, "
         f"{len(changed)} with file changes, {len(result.apps_removed)} removed."
@@ -137,56 +246,104 @@ def index(
     except psycopg.Error as exc:
         typer.echo(f"Database error while chunking: {exc}", err=True)
         raise typer.Exit(code=1) from exc
+    summary["chunks"] = {
+        "files_chunked": chunks.files_chunked,
+        "new": chunks.chunks_new,
+        "kept": chunks.chunks_kept,
+        "removed": chunks.chunks_removed,
+        "symbols": chunks.symbols,
+    }
     typer.echo(
         f"Chunks: {chunks.files_chunked} file(s) chunked ({chunks.files_as_text} as text), "
         f"{chunks.chunks_new} new, {chunks.chunks_kept} kept, {chunks.chunks_removed} removed; "
         f"{chunks.symbols} symbols."
     )
     if chunks.files_skipped:
+        status = "partial"
         typer.echo(
             f"{chunks.files_skipped} file(s) skipped (unreadable or changed during the run); "
             "run `stc index` again.",
             err=True,
         )
-    _relations_stage(settings, root)
-    if not skip_embeddings:
-        _embed_stage(settings, dry_run=False, yes=yes, soft=True)
+    signals, relations = _relations_stage(settings, root)
+    summary["relations"] = {
+        "files_read": signals.files_extracted,
+        "signals": signals.signals,
+        "total": relations.total,
+        "added": relations.added,
+        "removed": relations.removed,
+    }
+    if signals.files_skipped:
+        status = "partial"
+    if skip_embeddings:
+        summary["embeddings"] = "skipped"
+    else:
+        embedded = _embed_stage(settings, dry_run=False, yes=yes, soft=True, application=only)
+        if embedded is None:
+            status = "partial"
+            summary["embeddings"] = "not run"
+        else:
+            summary["embeddings"] = {
+                "chunks": embedded[0].chunks_embedded,
+                "sections": embedded[1].chunks_embedded,
+            }
     if result.apps_missing:
         typer.echo(
             "Not found in the Root (kept; use --prune to remove): "
             + ", ".join(result.apps_missing),
             err=True,
         )
+    return status
 
 
-def _embed_stage(settings: Settings, *, dry_run: bool, yes: bool, soft: bool = False) -> None:
-    """Embed pending chunks. `soft` (used by `stc index`) turns missing provider configuration
-    into a warning, since everything before this stage already succeeded."""
+def _embed_stage(
+    settings: Settings,
+    *,
+    dry_run: bool,
+    yes: bool,
+    soft: bool = False,
+    application: str | None = None,
+) -> tuple[EmbedStats, EmbedStats] | None:
+    """Embed pending chunks and catalog sections. `soft` (used by `stc index`) turns missing
+    provider configuration into a warning, since everything before this stage already succeeded.
+    Returns the stats (chunks, sections), or None when nothing was embedded because of a dry run
+    or a soft skip."""
     if settings.db_url is None:
         typer.echo("STC_DB_URL is not set.", err=True)
         raise typer.Exit(code=2)
     provider, model = settings.embeddings_provider, settings.embeddings_model or "(not set)"
     try:
         with psycopg.connect(settings.db_url) as conn:
-            estimate = estimate_pending(conn, provider, model)
+            chunk_estimate = estimate_pending(conn, provider, model, application=application)
+            section_estimate = estimate_sections(conn, provider, model, application=application)
+            tokens = chunk_estimate.tokens + section_estimate.tokens
             typer.echo(
-                f"Embeddings: {estimate.chunks} chunk(s) to embed with {provider}/{model}, "
-                f"about {estimate.tokens:,} tokens (rough estimate)."
+                f"Embeddings: {chunk_estimate.chunks} chunk(s) and {section_estimate.sections} "
+                f"catalog section(s) to embed with {provider}/{model}, about {tokens:,} tokens "
+                "(rough estimate)."
             )
-            if dry_run or estimate.chunks == 0:
-                return
+            if dry_run:
+                return None
+            if chunk_estimate.chunks == 0 and section_estimate.sections == 0:
+                return EmbedStats(), EmbedStats()
             try:
                 client = build_embeddings_client(settings)
             except ProviderError as exc:
                 if soft:
                     typer.echo(f"Embeddings skipped: {exc}", err=True)
-                    return
+                    return None
                 raise
-            if estimate.tokens > CONFIRM_TOKENS and not yes:
+            if tokens > CONFIRM_TOKENS and not yes:
                 typer.confirm("Continue?", abort=True)
-            stats = asyncio.run(
-                closing(embed_pending(conn, client, concurrency=settings.concurrency), client)
-            )
+
+            async def work() -> tuple[EmbedStats, EmbedStats]:
+                chunks = await embed_pending(
+                    conn, client, application=application, concurrency=settings.concurrency
+                )
+                sections = await embed_sections(conn, client, application=application)
+                return chunks, sections
+
+            stats = asyncio.run(closing(work(), client))
     except ProviderError as exc:
         typer.echo(f"Embedding failed: {exc} (progress is kept; run again to resume)", err=True)
         raise typer.Exit(code=1) from exc
@@ -194,12 +351,15 @@ def _embed_stage(settings: Settings, *, dry_run: bool, yes: bool, soft: bool = F
         typer.echo(f"Database error while embedding: {exc}", err=True)
         raise typer.Exit(code=1) from exc
     typer.echo(
-        f"Embedded {stats.chunks_embedded} chunk(s) ({stats.chunks_replaced} replaced stale "
-        f"vectors) in {stats.requests} request(s), {stats.retries} retried."
+        f"Embedded {stats[0].chunks_embedded} chunk(s) ({stats[0].chunks_replaced} replaced stale "
+        f"vectors) and {stats[1].chunks_embedded} catalog section(s) in "
+        f"{stats[0].requests + stats[1].requests} request(s), "
+        f"{stats[0].retries + stats[1].retries} retried."
     )
+    return stats
 
 
-def _relations_stage(settings: Settings, root: Path) -> None:
+def _relations_stage(settings: Settings, root: Path) -> tuple[SignalStats, RelationStats]:
     if settings.db_url is None:
         typer.echo("STC_DB_URL is not set.", err=True)
         raise typer.Exit(code=2)
@@ -225,6 +385,7 @@ def _relations_stage(settings: Settings, root: Path) -> None:
             "run `stc index` again.",
             err=True,
         )
+    return signals, relations
 
 
 @app.command()
@@ -296,15 +457,122 @@ def check_providers() -> None:
 
 
 @app.command()
-def reindex() -> None:
-    """Force reindexing of one application or the whole Root."""
-    _not_implemented("reindex")
+def status(
+    application: Annotated[
+        str | None, typer.Argument(help="One application (default: all).")
+    ] = None,
+    check: Annotated[
+        bool,
+        typer.Option(
+            "--check", help="Also scan the Root and list what changed since the last run."
+        ),
+    ] = False,
+    root: RootOption = None,
+) -> None:
+    """Show what is indexed, what is pending and how the last runs went (XCT-05)."""
+    from stc.indexer.changes import pending_changes, removed_applications
+    from stc.query.browse import index_status
+    from stc.query.models import QueryError
 
+    settings = get_settings()
+    if settings.db_url is None:
+        typer.echo("STC_DB_URL is not set.", err=True)
+        raise typer.Exit(code=2)
+    scanned = None
+    if check:
+        chosen = _resolve_root(root)
+        try:
+            scanned = scan_root(chosen, only=application)
+        except (ConfigError, ValueError) as exc:
+            typer.echo(f"Scan failed: {exc}", err=True)
+            raise typer.Exit(code=1) from exc
+    try:
+        with psycopg.connect(settings.db_url, autocommit=True) as conn:
+            try:
+                state = index_status(conn, application)
+            except QueryError as exc:
+                typer.echo(exc.message, err=True)
+                raise typer.Exit(code=2) from exc
+            runs = recent_runs(conn, 5)
+            provider, model = settings.embeddings_provider, settings.embeddings_model
+            pending_chunks = pending_sections = 0
+            if model:
+                pending_chunks = estimate_pending(
+                    conn, provider, model, application=application
+                ).chunks
+                pending_sections = estimate_sections(
+                    conn, provider, model, application=application
+                ).sections
+            changes = pending_changes(conn, scanned) if scanned is not None else None
+            gone = removed_applications(conn, scanned) if scanned and not application else []
+    except psycopg.Error as exc:
+        typer.echo(f"Database error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
 
-@app.command()
-def status() -> None:
-    """Show indexing status."""
-    _not_implemented("status")
+    for note in state.notes:
+        typer.echo(note)
+    for item in state.applications:
+        files = ", ".join(f"{n} {s}" for s, n in sorted(item.files.items()))
+        catalog = item.catalog_status or "none"
+        if item.catalog_outdated:
+            catalog += " (outdated)"
+        version = (item.code_version or "unknown")[:7]
+        typer.echo(
+            f"{item.name}  [{version}]  files: {files or 'none'}  "
+            f"chunks: {item.embedded_chunks}/{item.chunks} embedded  catalog: {catalog}  "
+            f"relations: {item.relations}"
+        )
+    missing = [a.name for a in state.applications if a.catalog_status is None]
+    partial = [a.name for a in state.applications if a.catalog_status == "partial"]
+    outdated = [a.name for a in state.applications if a.catalog_outdated]
+    todo = []
+    if pending_chunks or pending_sections:
+        todo.append(
+            f"{pending_chunks} chunk(s) and {pending_sections} catalog section(s) not embedded "
+            "with the configured model (`stc embed`)"
+        )
+    if missing:
+        todo.append(f"no catalog yet: {', '.join(missing)} (`stc catalog --all`)")
+    if partial:
+        todo.append(f"incomplete catalog: {', '.join(partial)} (run `stc catalog` again)")
+    if outdated:
+        todo.append(f"catalog older than the code: {', '.join(outdated)} (`stc catalog`)")
+    if changes is not None:
+        for change in changes:
+            if change.any:
+                what = "new application" if change.new_application else (
+                    f"{change.added} new, {change.changed} changed, "
+                    f"{change.removed} removed file(s)"
+                )  # fmt: skip
+                todo.append(f"{change.name}: {what} in the Root (`stc index`)")
+        if gone:
+            todo.append(f"no longer in the Root: {', '.join(gone)} (`stc index --prune`)")
+        if not any(c.any for c in changes) and not gone:
+            typer.echo("The Root has no changes since the last run.")
+    if todo:
+        typer.echo("To do:")
+        for line in todo:
+            typer.echo(f"  - {line}")
+    elif state.applications:
+        typer.echo("Nothing pending.")
+
+    if runs:
+        typer.echo("Last runs:")
+        for run in runs:
+            when = run.started_at.strftime("%Y-%m-%d %H:%M UTC")
+            took = f", {run.seconds:.0f}s" if run.seconds is not None else ""
+            target = f" {run.application}" if run.application else ""
+            registry = run.summary.get("registry")
+            files = (
+                f"; {registry['files_added']} added, {registry['files_changed']} changed, "
+                f"{registry['files_removed']} removed file(s)"
+                if isinstance(registry, dict)
+                else ""
+            )
+            problem = f" - {run.error}" if run.error else ""
+            typer.echo(f"  #{run.id} {run.kind}{target} {run.status} {when}{took}{files}{problem}")
+    else:
+        typer.echo("No indexing run recorded yet (`stc index`).")
 
 
 async def _generate_all(
@@ -407,6 +675,8 @@ def catalog(
                 if tokens_in > CONFIRM_TOKENS and not yes:
                     typer.confirm("Continue?", abort=True)
                 failed = asyncio.run(closing(_generate_all(conn, llm, plan, settings), llm))
+            if plan:
+                _embed_stage(settings, dry_run=False, yes=yes, soft=True)
             typer.echo(f"Wrote {write_global_map(conn, settings.catalogs)}")
     except UnknownApplication as exc:
         typer.echo(str(exc), err=True)

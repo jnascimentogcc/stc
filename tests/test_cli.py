@@ -17,11 +17,6 @@ def test_version() -> None:
     assert result.stdout.strip() == __version__
 
 
-def test_unimplemented_command_fails_clearly() -> None:
-    result = runner.invoke(app, ["reindex"])
-    assert result.exit_code == 1
-
-
 def test_check_providers_reports_missing_configuration(monkeypatch: pytest.MonkeyPatch) -> None:
     for name in ("OPENAI_API_KEY", "STC_EMBEDDINGS_MODEL", "STC_LLM_CHAT_MODEL"):
         monkeypatch.delenv(name, raising=False)

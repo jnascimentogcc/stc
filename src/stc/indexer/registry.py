@@ -33,9 +33,12 @@ def sync_registry(
     scanned: list[ScannedApplication],
     *,
     prune: bool = False,
+    partial: bool = False,
 ) -> SyncResult:
     """Make the DB reflect `scanned`. Applications missing from the scan are only removed with
-    `prune`, so pointing at the wrong folder cannot wipe the knowledge base by accident."""
+    `prune`, so pointing at the wrong folder cannot wipe the knowledge base by accident. With
+    `partial` the scan covers only some applications: the others are neither reported as
+    missing nor removed."""
     result = SyncResult()
     with conn.transaction():
         known = {
@@ -72,8 +75,8 @@ def sync_registry(
                 )
             result.applications.append(_sync_files(conn, app_id, app))
 
-        missing = sorted(set(known) - seen)
-        if prune:
+        missing = [] if partial else sorted(set(known) - seen)
+        if prune and not partial:
             for name in missing:
                 conn.execute("DELETE FROM applications WHERE id = %s", (known[name],))
             result.apps_removed = missing

@@ -294,15 +294,39 @@ def find_symbol(
     return Page(hits, offset, limit, len(rows) > limit, [] if hits else [NO_MATCH_NOTE])
 
 
+def _catalog_semantic_ids(
+    conn: psycopg.Connection,
+    embedder: QueryEmbedder,
+    query: str,
+    scope: str,
+    scope_params: list[object],
+    depth: int,
+) -> list[int]:
+    vector = _vector_literal(embedder(query))
+    sql = (
+        "SELECT cs.id FROM catalog_section_embeddings e"
+        " JOIN catalog_sections cs ON cs.id = e.section_id"
+        " JOIN catalogs c ON c.id = cs.catalog_id JOIN applications a ON a.id = c.application_id"
+        f" WHERE e.provider = %s AND e.model = %s{scope}"
+        " ORDER BY e.embedding <=> %s::vector LIMIT %s"
+    )
+    rows = conn.execute(
+        sql, [embedder.provider, embedder.model, *scope_params, vector, depth]
+    ).fetchall()
+    return [int(r[0]) for r in rows]
+
+
 def search_catalogs(
     conn: psycopg.Connection,
+    embedder: QueryEmbedder | None,
     query: str,
     *,
     applications: list[str] | None = None,
     limit: int = 10,
     offset: int = 0,
 ) -> Page[CatalogHit]:
-    """Full-text search over the catalog sections (functional knowledge), apart from the code."""
+    """Search the catalog sections (functional knowledge) by meaning and by words together,
+    apart from the code."""
     if not query.strip():
         raise QueryError("invalid_argument", "The query is empty.")
     limit, offset = page_args(limit, offset)
@@ -310,21 +334,68 @@ def search_catalogs(
     terms = query_terms(query)
     if not terms:
         raise QueryError("invalid_argument", "The query has no searchable words.")
-    rows = conn.execute(
-        "SELECT a.name, cs.section, cs.content, c.code_version,"
-        " ts_rank_cd(cs.tsv, q) AS rank FROM catalog_sections cs"
-        " JOIN catalogs c ON c.id = cs.catalog_id JOIN applications a ON a.id = c.application_id,"
-        " to_tsquery('simple', %s) q"
-        f" WHERE cs.tsv @@ q{scope}"
-        " ORDER BY rank DESC, a.name, cs.section LIMIT %s OFFSET %s",
-        [" | ".join(terms), *scope_params, limit + 1, offset],
-    ).fetchall()
-    hits = [
-        CatalogHit(app, section, snippet(content), round(float(rank), 6), version)
-        for app, section, content, version, rank in rows[:limit]
+    depth = min(300, max(60, (offset + limit) * 4))
+    notes: list[str] = []
+
+    legs: dict[str, list[int]] = {}
+    if embedder is not None:
+        try:
+            legs["semantic"] = _catalog_semantic_ids(
+                conn, embedder, query, scope, scope_params, depth
+            )
+        except QueryError as exc:
+            legs["semantic"] = []
+            notes.append(f"{exc.message} Falling back to word search only.")
+        else:
+            if not legs["semantic"]:
+                notes.append(
+                    "No catalog section is embedded with "
+                    f"{embedder.provider}/{embedder.model} in this scope: the semantic part "
+                    "found nothing (run `stc embed`)."
+                )
+    else:
+        notes.append("Semantic search is not available (no embeddings client): words only.")
+    legs["lexical"] = [
+        int(r[0])
+        for r in conn.execute(
+            "SELECT cs.id FROM catalog_sections cs JOIN catalogs c ON c.id = cs.catalog_id"
+            " JOIN applications a ON a.id = c.application_id, to_tsquery('simple', %s) q"
+            f" WHERE cs.tsv @@ q{scope}"
+            " ORDER BY ts_rank_cd(cs.tsv, q) DESC, cs.id LIMIT %s",
+            [" | ".join(terms), *scope_params, depth],
+        ).fetchall()
     ]
-    notes = [] if hits else [NO_MATCH_NOTE]
-    return Page(hits, offset, limit, len(rows) > limit, notes)
+
+    score: dict[int, float] = defaultdict(float)
+    matched: dict[int, list[str]] = defaultdict(list)
+    for leg, ids in legs.items():
+        for rank, section_id in enumerate(ids, start=1):
+            score[section_id] += 1.0 / (RRF_K + rank)
+            matched[section_id].append(leg)
+    ordered = sorted(score, key=lambda i: (-score[i], i))
+    window = ordered[offset : offset + limit]
+    if not ordered:
+        notes.append(NO_MATCH_NOTE)
+        return Page([], offset, limit, False, notes)
+    rows = conn.execute(
+        "SELECT cs.id, a.name, cs.section, cs.content, c.code_version FROM catalog_sections cs"
+        " JOIN catalogs c ON c.id = cs.catalog_id JOIN applications a ON a.id = c.application_id"
+        " WHERE cs.id = ANY(%s)",
+        (window,),
+    ).fetchall()
+    by_id = {r[0]: r for r in rows}
+    hits = [
+        CatalogHit(
+            by_id[i][1],
+            by_id[i][2],
+            snippet(by_id[i][3]),
+            round(score[i], 6),
+            by_id[i][4],
+            matched[i],
+        )
+        for i in window
+    ]
+    return Page(hits, offset, limit, len(ordered) > offset + limit, notes)
 
 
 __all__ = [

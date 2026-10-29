@@ -175,6 +175,7 @@ class QueryEngine:
     ) -> Page[CatalogHit]:
         return search.search_catalogs(
             self.conn,
+            self.embedder,
             query,
             applications=self._applications(applications),
             limit=limit,

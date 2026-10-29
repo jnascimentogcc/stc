@@ -12,10 +12,16 @@ def detect_root(root: Path) -> list[ApplicationSpec]:
     return detect_applications(root, load_root_config(root))
 
 
-def scan_root(root: Path) -> list[ScannedApplication]:
+def scan_root(root: Path, only: str | None = None) -> list[ScannedApplication]:
+    """Scan every detected application, or just `only` (which must be detected)."""
     config = load_root_config(root)
     exclusions = Exclusions(config.exclude.patterns)
     specs = detect_applications(root, config)
+    if only is not None:
+        specs = [s for s in specs if s.name == only]
+        if not specs:
+            known = ", ".join(s.name for s in detect_applications(root, config)) or "none"
+            raise ValueError(f"No application named {only!r} in the Root. Detected: {known}")
     return [scan_application(root, spec, exclusions) for spec in specs]
 
 
