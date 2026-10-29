@@ -242,6 +242,10 @@ export class ChatStore {
       case 'text':
         this.turn.set({ ...turn, text: turn.text + event.data.delta });
         break;
+      case 'text_reset':
+        // Text before a tool call was not the answer.
+        this.turn.set({ ...turn, text: '' });
+        break;
       case 'done':
         this.messages.update((list) => [
           ...list,

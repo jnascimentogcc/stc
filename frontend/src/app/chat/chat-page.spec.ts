@@ -208,10 +208,13 @@ describe('CitationListComponent', () => {
     const buttons = root.querySelectorAll('button');
     expect(buttons).toHaveLength(1); // the unverified one is not a control
     buttons[0].click();
-    await vi.waitFor(() => expect(root.querySelector('pre')).not.toBeNull());
+    await vi.waitFor(() => expect(root.querySelector('[data-code]')).not.toBeNull());
     await fixture.whenStable();
-    const pre = root.querySelector('pre')!;
-    expect([...pre.querySelectorAll('span')].map((n) => n.textContent)).toEqual(['2', '3']);
+    const pre = root.querySelector('[data-code]')!;
+    expect([...pre.querySelectorAll('span.select-none')].map((n) => n.textContent)).toEqual([
+      '2',
+      '3',
+    ]);
     expect(text(pre)).toContain('const a = 1;');
     expect(text(pre)).toContain('const b = 2;');
     expect(text(root)).toContain('abcdef1');
@@ -219,7 +222,7 @@ describe('CitationListComponent', () => {
 
     buttons[0].click();
     await fixture.whenStable();
-    expect(root.querySelector('pre')).toBeNull();
+    expect(root.querySelector('[data-code]')).toBeNull();
   });
 
   it('says so when the code cannot be loaded', async () => {

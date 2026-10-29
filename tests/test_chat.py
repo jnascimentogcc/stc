@@ -16,7 +16,16 @@ from stc.chat.evidence import Evidence
 from stc.config import Settings
 from stc.db.migrate import migrate
 from stc.mcp_server import build_server
-from stc.providers import LLMResponse, Message, ProviderError, ToolCall, ToolSpec, Usage
+from stc.providers import (
+    LLMResponse,
+    Message,
+    ProviderError,
+    TextDelta,
+    ToolCall,
+    ToolSpec,
+    TurnEnd,
+    Usage,
+)
 from stc.query import QueryEngine, QueryError
 from test_catalog import index, make_root, write
 
@@ -101,6 +110,35 @@ class ScriptedLLM:
 
     def stream(self, messages, *, tools=None):  # type: ignore[no-untyped-def]
         raise NotImplementedError
+
+
+class StreamingLLM:
+    """A provider that streams whole turns: each turn is (text pieces, tool calls, or an error)."""
+
+    provider = "fake"
+    model = "streaming"
+
+    def __init__(self, *turns: tuple[list[str], list[ToolCall] | ProviderError | None]) -> None:
+        self.turns = list(turns)
+        self.requests: list[tuple[list[Message], bool]] = []
+
+    async def complete(self, messages, *, tools=None, response_schema=None):  # type: ignore[no-untyped-def]
+        raise AssertionError("a streaming provider must not be asked for a complete turn")
+
+    def stream(self, messages, *, tools=None):  # type: ignore[no-untyped-def]
+        raise NotImplementedError
+
+    async def stream_turn(self, messages, *, tools=None):  # type: ignore[no-untyped-def]
+        self.requests.append((list(messages), bool(tools)))
+        pieces, outcome = self.turns.pop(0)
+        for piece in pieces:
+            yield TextDelta(piece)
+        if isinstance(outcome, ProviderError):
+            raise outcome
+        calls = outcome or []
+        yield TurnEnd(
+            LLMResponse("".join(pieces), calls, Usage(7, 3), "tool_calls" if calls else "stop")
+        )
 
 
 @pytest.fixture
@@ -214,6 +252,49 @@ def test_history_is_part_of_the_context(settings: Settings) -> None:
     roles = [m.role for m in llm.requests[0][0]]
     assert roles == ["system", "user", "assistant", "user"]
     assert llm.requests[0][0][-1].content == "and web?"
+
+
+def test_answer_text_is_sent_as_the_provider_streams_it(settings: Settings) -> None:
+    llm = StreamingLLM(
+        ([], [ToolCall("t1", "grep_code", {"pattern": "payment ok"})]),
+        (["It returns ", "`svc/billing.py:2-2`", " when charging."], None),
+    )
+    events = agent_events(settings, llm)  # type: ignore[arg-type]
+    kinds = [e.type for e in events]
+    assert kinds == ["tool_call", "tool_result", "text", "text", "text", "done"]
+    assert [e.data["delta"] for e in events if e.type == "text"] == [
+        "It returns ",
+        "`svc/billing.py:2-2`",
+        " when charging.",
+    ]
+    done = events[-1].data
+    assert done["answer"] == "It returns `svc/billing.py:2-2` when charging."
+    assert done["citations"][0]["verified"] and done["steps"] == 2
+    assert done["usage"] == {"input_tokens": 14, "output_tokens": 6}
+
+
+def test_text_before_tool_calls_is_dropped_by_the_client(settings: Settings) -> None:
+    llm = StreamingLLM(
+        (["Let me look. "], [ToolCall("t1", "grep_code", {"pattern": "payment ok"})]),
+        (["Found it."], None),
+    )
+    events = agent_events(settings, llm)  # type: ignore[arg-type]
+    assert [e.type for e in events] == [
+        "text", "text_reset", "tool_call", "tool_result", "text", "done",
+    ]  # fmt: skip
+    assert events[-1].data["answer"] == "Found it."
+    # The model still sees what it said before calling the tool.
+    assistant = [m for m in llm.requests[1][0] if m.role == "assistant"]
+    assert assistant[0].content == "Let me look. " and assistant[0].tool_calls
+
+
+def test_a_stream_that_fails_midway_ends_in_an_error_after_the_text_already_sent(
+    settings: Settings,
+) -> None:
+    llm = StreamingLLM((["Half an ans"], ProviderError("fake", "connection reset")))
+    events = agent_events(settings, llm)  # type: ignore[arg-type]
+    assert [e.type for e in events] == ["text", "error"]
+    assert "connection reset" in events[1].data["message"]
 
 
 # --- scope (CHT-06) -----------------------------------------------------------------------------

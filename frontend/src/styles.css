@@ -10,6 +10,7 @@
 
 /* Normative tokens (copy of docs/ui-spec.md §3.2) */
 @import './styles/tokens.css';
+@import './styles/code.css';
 
 @import '@spartan-ng/brain/hlm-tailwind-preset.css';
 

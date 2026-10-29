@@ -71,3 +71,46 @@ class LLMClient(Protocol):
     ) -> AsyncIterator[str]:
         """Text deltas of one model turn."""
         ...
+
+
+@dataclass(frozen=True)
+class TextDelta:
+    """A piece of the reply text, as soon as the provider sends it."""
+
+    text: str
+
+
+@dataclass(frozen=True)
+class TurnEnd:
+    """The whole turn once the stream ends: its text, tool calls, usage and finish reason."""
+
+    response: LLMResponse
+
+
+StreamEvent = TextDelta | TurnEnd
+
+
+class StreamingLLMClient(LLMClient, Protocol):
+    """A provider that streams a whole turn, tool calls included (`stream` above is text only)."""
+
+    def stream_turn(
+        self,
+        messages: Sequence[Message],
+        *,
+        tools: Sequence[ToolSpec] | None = None,
+    ) -> AsyncIterator[StreamEvent]:
+        """Text deltas as they arrive, then one `TurnEnd` with the complete response."""
+        ...
+
+
+async def turn_events(
+    llm: LLMClient, messages: Sequence[Message], tools: Sequence[ToolSpec] | None
+) -> AsyncIterator[StreamEvent]:
+    """One model turn as events. A provider that cannot stream a turn answers in one piece: the
+    caller then gets only the `TurnEnd`."""
+    stream_turn = getattr(llm, "stream_turn", None)
+    if stream_turn is None:
+        yield TurnEnd(await llm.complete(messages, tools=tools))
+        return
+    async for event in stream_turn(messages, tools=tools):
+        yield event

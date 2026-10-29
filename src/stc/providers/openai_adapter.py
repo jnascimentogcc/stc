@@ -13,7 +13,16 @@ import openai
 from openai import AsyncOpenAI
 
 from stc.providers.errors import ProviderConfigError, ProviderError, ProviderResponseError
-from stc.providers.llm import LLMResponse, Message, ToolCall, ToolSpec, Usage
+from stc.providers.llm import (
+    LLMResponse,
+    Message,
+    StreamEvent,
+    TextDelta,
+    ToolCall,
+    ToolSpec,
+    TurnEnd,
+    Usage,
+)
 from stc.providers.ratelimit import RateLimiter
 
 PROVIDER = "openai"
@@ -120,6 +129,52 @@ class OpenAILLM:
         except openai.OpenAIError as exc:
             raise _translate(exc) from exc
 
+    async def stream_turn(
+        self,
+        messages: Sequence[Message],
+        *,
+        tools: Sequence[ToolSpec] | None = None,
+    ) -> AsyncIterator[StreamEvent]:
+        """One turn, streamed: text deltas as they arrive, then a `TurnEnd` with the text, the
+        tool calls (their arguments arrive in fragments and are put together here), the usage
+        and the finish reason."""
+        kwargs = self._request(messages, tools, None)
+        kwargs["stream_options"] = {"include_usage": True}
+        if self._limiter:
+            await self._limiter.wait()
+        text: list[str] = []
+        fragments: dict[int, dict[str, str]] = {}
+        usage = Usage()
+        finish: str | None = None
+        try:
+            chunks = await self._client.chat.completions.create(stream=True, **kwargs)
+            async for chunk in chunks:
+                if chunk.usage:
+                    usage = Usage(chunk.usage.prompt_tokens, chunk.usage.completion_tokens)
+                if not chunk.choices:
+                    continue
+                choice = chunk.choices[0]
+                if choice.delta.content:
+                    text.append(choice.delta.content)
+                    yield TextDelta(choice.delta.content)
+                for part in choice.delta.tool_calls or []:
+                    slot = fragments.setdefault(part.index, {"id": "", "name": "", "arguments": ""})
+                    if part.id:
+                        slot["id"] = part.id
+                    if part.function and part.function.name:
+                        slot["name"] += part.function.name
+                    if part.function and part.function.arguments:
+                        slot["arguments"] += part.function.arguments
+                if choice.finish_reason:
+                    finish = choice.finish_reason
+        except openai.OpenAIError as exc:
+            raise _translate(exc) from exc
+        calls = [
+            _tool_call(slot["id"], slot["name"], slot["arguments"])
+            for _, slot in sorted(fragments.items())
+        ]
+        yield TurnEnd(LLMResponse("".join(text), calls, usage, finish))
+
     def _request(
         self,
         messages: Sequence[Message],
@@ -176,17 +231,19 @@ def _to_wire(message: Message) -> dict[str, Any]:
 
 
 def _parse_tool_call(call: Any) -> ToolCall:
+    return _tool_call(call.id, call.function.name, call.function.arguments)
+
+
+def _tool_call(call_id: str, name: str, raw_arguments: str | None) -> ToolCall:
     try:
-        arguments = json.loads(call.function.arguments or "{}")
+        arguments = json.loads(raw_arguments or "{}")
     except json.JSONDecodeError as exc:
         raise ProviderResponseError(
-            PROVIDER, f"tool call {call.function.name!r} has invalid JSON arguments"
+            PROVIDER, f"tool call {name!r} has invalid JSON arguments"
         ) from exc
     if not isinstance(arguments, dict):
-        raise ProviderResponseError(
-            PROVIDER, f"tool call {call.function.name!r} arguments are not a JSON object"
-        )
-    return ToolCall(id=call.id, name=call.function.name, arguments=arguments)
+        raise ProviderResponseError(PROVIDER, f"tool call {name!r} arguments are not a JSON object")
+    return ToolCall(id=call_id, name=name, arguments=arguments)
 
 
 class OpenAIEmbeddings:

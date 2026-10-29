@@ -85,5 +85,6 @@ export type ChatEvent =
   | { event: 'tool_call'; data: { id: string; name: string; arguments: Record<string, unknown> } }
   | { event: 'tool_result'; data: { id: string; name: string; ok: boolean; summary: string } }
   | { event: 'text'; data: { delta: string } }
+  | { event: 'text_reset'; data: Record<string, never> }
   | { event: 'done'; data: DoneData }
   | { event: 'error'; data: { code: string; message: string } };

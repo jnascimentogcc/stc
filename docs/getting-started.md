@@ -186,8 +186,10 @@ cd frontend && npm install && npm start
 ```
 
 Open <http://localhost:4200>. Ask "Which applications call demo-api, and where?": the steps the
-agent takes appear while it works, then the answer. Click a source to see the cited lines;
-sources marked *unverified* did not match anything the tools returned, so check them yourself.
+agent takes appear while it works, then the answer writes itself as the model produces it. Click
+a source, or a reference such as `demo-web/src/client.ts:2-2` inside the answer, to see the cited
+lines with syntax highlighting; references marked *unverified* (dashed, with a warning) did not
+match anything the tools returned, so check them yourself.
 Use *Scope* to limit a conversation to some applications and *Answer style* for business
 language. The theme follows your system and can be toggled in the header.
 

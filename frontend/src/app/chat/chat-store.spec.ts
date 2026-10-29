@@ -132,6 +132,29 @@ describe('ChatStore', () => {
     expect(store.conversations()[0].id).toBe('c1');
   });
 
+  it('shows the text as it streams in and drops what came before a tool call', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    api.ask = async function* () {
+      yield { event: 'text', data: { delta: 'Let me look. ' } } as ChatEvent;
+      yield { event: 'text_reset', data: {} } as ChatEvent;
+      yield {
+        event: 'tool_call',
+        data: { id: 't1', name: 'grep_code', arguments: {} },
+      } as ChatEvent;
+      yield { event: 'text', data: { delta: 'It ' } } as ChatEvent;
+      yield { event: 'text', data: { delta: 'does X' } } as ChatEvent;
+      await gate;
+      yield DONE;
+    } as never;
+    const pending = store.send('q');
+    await vi.waitFor(() => expect(store.turn()?.text).toBe('It does X'));
+    expect(store.turn()?.steps).toHaveLength(1);
+    release();
+    await pending;
+    expect(store.messages().at(-1)?.content).toBe('It does X `a/b.py:1-2`.');
+  });
+
   it('shows tool progress while the turn runs', async () => {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => (release = resolve));

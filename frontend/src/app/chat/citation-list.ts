@@ -1,14 +1,27 @@
-import { ChangeDetectionStrategy, Component, inject, input, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  inject,
+  input,
+  signal,
+} from '@angular/core';
 import { NgIcon, provideIcons } from '@ng-icons/core';
 import { lucideCircleAlert, lucideCircleCheck } from '@ng-icons/lucide';
 import { TranslocoDirective } from '@jsverse/transloco';
 import { ChatApi } from '../api/chat-api';
 import { Citation, FileSlice } from '../api/models';
+import { Highlighter, Token, languageForFile } from './highlight';
+
+interface Line {
+  number: number;
+  tokens: Token[];
+}
 
 interface Opened {
   state: 'loading' | 'ready' | 'error';
   slice?: FileSlice;
-  lines?: { number: number; text: string }[];
+  lines?: Line[];
   error?: string;
 }
 
@@ -54,6 +67,8 @@ interface Opened {
               <div
                 class="mt-2 overflow-hidden rounded-md border border-border bg-surface-2"
                 role="region"
+                tabindex="-1"
+                [attr.data-ref]="citation.ref"
                 [attr.aria-label]="citation.ref"
               >
                 @switch (opened()[citation.ref]?.state) {
@@ -76,11 +91,27 @@ interface Opened {
                         <span class="text-warning">{{ t('chat.fileChanged') }}</span>
                       }
                     </div>
-                    <pre
+                    <div
                       class="overflow-x-auto p-3 font-mono text-xs leading-relaxed"
                       tabindex="0"
-                    ><code>@for (line of opened()[citation.ref]?.lines; track line.number) {<span class="mr-3 inline-block w-8 select-none text-right text-text-3">{{ line.number }}</span>{{ line.text }}
-}</code></pre>
+                      data-code
+                    >
+                      @for (line of opened()[citation.ref]?.lines; track line.number) {
+                        <div class="whitespace-pre">
+                          <span class="mr-3 inline-block w-8 select-none text-right text-text-3">{{
+                            line.number
+                          }}</span>
+                          @for (token of line.tokens; track $index) {
+                            <span
+                              [style.color]="token.color"
+                              [class.italic]="token.italic"
+                              [class.font-bold]="token.bold"
+                              >{{ token.text }}</span
+                            >
+                          }
+                        </div>
+                      }
+                    </div>
                   }
                 }
               </div>
@@ -93,6 +124,8 @@ interface Opened {
 })
 export class CitationListComponent {
   private readonly api = inject(ChatApi);
+  private readonly highlighter = inject(Highlighter);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
   readonly citations = input.required<Citation[]>();
   protected readonly opened = signal<Record<string, Opened | undefined>>({});
@@ -103,15 +136,32 @@ export class CitationListComponent {
   }
 
   protected async toggle(citation: Citation): Promise<void> {
-    const next = new Set(this.shown());
-    if (next.has(citation.ref)) {
+    if (this.isOpen(citation)) {
+      const next = new Set(this.shown());
       next.delete(citation.ref);
       this.shown.set(next);
       return;
     }
-    next.add(citation.ref);
-    this.shown.set(next);
-    if (this.opened()[citation.ref]?.state === 'ready') return;
+    await this.open(citation.ref);
+  }
+
+  /** Opens the cited lines of a verified source, e.g. from a reference inside the answer, and
+   * moves focus to them. Does nothing for a reference that is not a verified citation. */
+  async open(ref: string): Promise<void> {
+    const citation = this.citations().find((c) => c.ref === ref && c.verified);
+    if (!citation) return;
+    this.shown.set(new Set(this.shown()).add(ref));
+    if (this.opened()[ref]?.state !== 'ready') await this.load(citation);
+    queueMicrotask(() => {
+      const region = [...this.host.nativeElement.querySelectorAll<HTMLElement>('[data-ref]')].find(
+        (element) => element.dataset['ref'] === ref,
+      );
+      region?.scrollIntoView?.({ block: 'nearest' });
+      region?.focus({ preventScroll: true });
+    });
+  }
+
+  private async load(citation: Citation): Promise<void> {
     if (!citation.application || !citation.file || !citation.start_line || !citation.end_line) {
       return;
     }
@@ -124,10 +174,19 @@ export class CitationListComponent {
         citation.end_line,
       );
       const first = slice.source.start_line;
+      const rows = slice.text.split('\n');
+      const highlighted = await this.highlighter.tokens(
+        slice.text,
+        languageForFile(slice.source.file),
+      );
       this.set(citation.ref, {
         state: 'ready',
         slice,
-        lines: slice.text.split('\n').map((text, index) => ({ number: first + index, text })),
+        // Plain text when the language has no grammar (or Shiki could not load).
+        lines: rows.map((text, index) => ({
+          number: first + index,
+          tokens: highlighted?.[index] ?? [{ text }],
+        })),
       });
     } catch (error) {
       this.set(citation.ref, {

@@ -1,0 +1,64 @@
+/*
+ * Colors of highlighted code (answers and cited lines). The ui-spec has no syntax palette, so
+ * these tokens are an addition: every color has at least 4.5:1 contrast on the code background
+ * (surface-2) in both themes. Shiki's CSS-variables theme reads the --shiki-* names.
+ */
+:root {
+  --code-keyword: #6b3fa0;
+  --code-string: #8a4a12;
+  --code-function: #1f5f8b;
+  --code-constant: #9c2f2f;
+  --code-comment: #5d6470;
+  --code-parameter: #2f3543;
+  --code-punctuation: #4e615b;
+  --code-link: #1f5f8b;
+}
+
+[data-theme='dark'] {
+  --code-keyword: #c9a3f0;
+  --code-string: #e3b27a;
+  --code-function: #8fc1ea;
+  --code-constant: #f0a0a0;
+  --code-comment: #a3abba;
+  --code-parameter: #ece6da;
+  --code-punctuation: #caceb5;
+  --code-link: #8fc1ea;
+}
+
+:root {
+  --shiki-foreground: var(--text);
+  --shiki-background: transparent;
+  --shiki-token-keyword: var(--code-keyword);
+  --shiki-token-string: var(--code-string);
+  --shiki-token-string-expression: var(--code-string);
+  --shiki-token-function: var(--code-function);
+  --shiki-token-constant: var(--code-constant);
+  --shiki-token-comment: var(--code-comment);
+  --shiki-token-parameter: var(--code-parameter);
+  --shiki-token-punctuation: var(--code-punctuation);
+  --shiki-token-link: var(--code-link);
+}
+
+/* A reference to code inside an answer: a verified one opens the cited lines; an unverified
+ * one says so with a dashed warning underline and in its accessible name. */
+.markdown code.cite {
+  cursor: default;
+}
+.markdown code.cite-ok {
+  cursor: pointer;
+  border-color: var(--success-border);
+  background: var(--success-bg);
+}
+.markdown code.cite-ok:hover {
+  background: var(--accent-soft-2);
+}
+.markdown code.cite-ok:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.markdown code.cite-bad {
+  border-color: var(--warning-border);
+  background: var(--warning-bg);
+  text-decoration: underline dashed var(--warning);
+  text-underline-offset: 3px;
+}

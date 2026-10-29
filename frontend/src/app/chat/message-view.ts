@@ -1,4 +1,11 @@
-import { ChangeDetectionStrategy, Component, inject, input, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  inject,
+  input,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { NgIcon, provideIcons } from '@ng-icons/core';
 import { lucideTriangleAlert } from '@ng-icons/lucide';
 import { TranslocoDirective } from '@jsverse/transloco';
@@ -40,7 +47,12 @@ type Rating = 'incorrect' | 'incomplete';
           class="rounded-lg border border-border bg-surface px-4 py-3 shadow-sm"
           [attr.aria-label]="t('chat.answer')"
         >
-          <app-markdown [source]="message().content" />
+          <app-markdown
+            [source]="message().content"
+            [citations]="message().citations"
+            [highlight]="true"
+            (referenceOpened)="sources()?.open($event)"
+          />
 
           @for (warning of message().warnings ?? []; track warning) {
             <div hlmAlert class="mt-3" role="status">
@@ -168,6 +180,7 @@ export class MessageViewComponent {
   private readonly store = inject(ChatStore);
 
   readonly message = input.required<Message>();
+  protected readonly sources = viewChild(CitationListComponent);
 
   protected readonly rating = signal<Rating | null>(null);
   protected readonly correction = signal('');

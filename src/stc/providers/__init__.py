@@ -5,7 +5,19 @@ from collections.abc import Awaitable
 from stc.providers.embeddings import EmbeddingsClient
 from stc.providers.errors import ProviderConfigError, ProviderError, ProviderResponseError
 from stc.providers.factory import build_embeddings_client, build_llm_client
-from stc.providers.llm import LLMClient, LLMResponse, Message, ToolCall, ToolSpec, Usage
+from stc.providers.llm import (
+    LLMClient,
+    LLMResponse,
+    Message,
+    StreamEvent,
+    StreamingLLMClient,
+    TextDelta,
+    ToolCall,
+    ToolSpec,
+    TurnEnd,
+    Usage,
+    turn_events,
+)
 
 
 async def closing[T](work: Awaitable[T], *clients: object) -> T:
@@ -28,12 +40,17 @@ __all__ = [
     "LLMClient",
     "LLMResponse",
     "Message",
+    "StreamEvent",
+    "StreamingLLMClient",
+    "TextDelta",
     "ProviderConfigError",
     "ProviderError",
     "ProviderResponseError",
     "ToolCall",
     "ToolSpec",
+    "TurnEnd",
     "Usage",
     "build_embeddings_client",
     "build_llm_client",
+    "turn_events",
 ]

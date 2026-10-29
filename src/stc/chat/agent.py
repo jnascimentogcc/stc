@@ -5,8 +5,10 @@ the MCP server's own (same names, schemas, descriptions and errors), so chat and
 apart. The turn yields events for a streaming client: tool calls and results as they happen,
 then the answer, then a final event with the verified citations and warnings.
 
-The answer is produced by a complete model turn and then sent in pieces: the provider interface
-streams text only, and a turn that ends in tool calls cannot be streamed that way."""
+The answer text is sent as the provider produces it. A provider that cannot stream a turn (it
+only has `complete`) answers in one piece, which is then sent in small pieces. Text that comes
+before a turn's tool calls is not the answer, so a `text_reset` event tells the client to drop
+it."""
 
 import asyncio
 import json
@@ -19,7 +21,16 @@ from mcp.server.mcpserver.exceptions import ToolError
 
 from stc.chat.evidence import Evidence
 from stc.chat.prompt import system_prompt
-from stc.providers import LLMClient, Message, ProviderError, ToolCall, ToolSpec
+from stc.providers import (
+    LLMClient,
+    LLMResponse,
+    Message,
+    ProviderError,
+    TextDelta,
+    ToolCall,
+    ToolSpec,
+    turn_events,
+)
 
 MAX_STEPS = 8
 MAX_TOOL_CHARS = 12_000  # what the model sees of one tool result
@@ -33,7 +44,7 @@ FINAL_NUDGE = (
 
 @dataclass
 class Event:
-    type: str  # tool_call | tool_result | text | done | error
+    type: str  # tool_call | tool_result | text | text_reset | done | error
     data: dict[str, Any] = field(default_factory=dict)
 
 
@@ -110,20 +121,36 @@ async def run_agent(
         last = steps >= max_steps
         if last:
             messages.append(Message("user", FINAL_NUDGE))
+        streamed = False
+        response: LLMResponse | None = None
         try:
-            response = await llm.complete(messages, tools=None if last else specs)
+            async for item in turn_events(llm, messages, None if last else specs):
+                if isinstance(item, TextDelta):
+                    streamed = True
+                    yield Event("text", {"delta": item.text})
+                else:
+                    response = item.response
         except ProviderError as exc:
             message = str(exc)
             if "reasoning_effort" in message:
                 message += " (set STC_LLM_CHAT_REASONING_EFFORT=none)"
             yield Event("error", {"code": "provider_error", "message": message})
             return
+        if response is None:
+            yield Event("error", {"code": "provider_error", "message": "The model sent no reply."})
+            return
         input_tokens += response.usage.input_tokens
         output_tokens += response.usage.output_tokens
         steps += 1
         if not response.tool_calls or last:
             answer = response.text.strip() or "I could not produce an answer."
+            if not streamed:  # a provider that cannot stream a turn: send it in pieces
+                for piece in _pieces(answer):
+                    yield Event("text", {"delta": piece})
             break
+        if streamed:
+            # Text that came before the tool calls is not the answer: the client drops it.
+            yield Event("text_reset")
 
         messages.append(Message("assistant", response.text, tool_calls=tuple(response.tool_calls)))
         for call in response.tool_calls:
@@ -145,8 +172,6 @@ async def run_agent(
                 },
             )
 
-    for piece in _pieces(answer):
-        yield Event("text", {"delta": piece})
     citations = evidence.check(answer)
     warnings = list(evidence.warnings)
     unverified = [c.ref for c in citations if not c.verified]

@@ -11,12 +11,14 @@ import pytest
 from openai import AsyncOpenAI
 
 from stc.providers import (
+    LLMResponse,
     Message,
     ProviderConfigError,
     ProviderError,
     ProviderResponseError,
     ToolCall,
     ToolSpec,
+    Usage,
 )
 from stc.providers.openai_adapter import OpenAIEmbeddings, OpenAILLM
 from stc.providers.ratelimit import RateLimiter
@@ -231,6 +233,125 @@ def test_stream_yields_text_deltas() -> None:
         return [part async for part in llm(handler).stream([Message("user", "hi")])]
 
     assert asyncio.run(collect()) == ["Hel", "lo"]
+
+
+def sse_events(*deltas: dict[str, Any], finish: str = "stop", usage: bool = True) -> str:
+    def chunk(delta: dict[str, Any], reason: str | None) -> str:
+        body = {
+            "id": "c",
+            "object": "chat.completion.chunk",
+            "created": 0,
+            "model": "m",
+            "choices": [{"index": 0, "delta": delta, "finish_reason": reason}],
+        }
+        return f"data: {json.dumps(body)}\n\n"
+
+    out = "".join(chunk(d, None) for d in deltas) + chunk({}, finish)
+    if usage:  # with stream_options.include_usage the last chunk has no choices
+        last = {
+            "id": "c",
+            "object": "chat.completion.chunk",
+            "created": 0,
+            "model": "m",
+            "choices": [],
+            "usage": {"prompt_tokens": 11, "completion_tokens": 4, "total_tokens": 15},
+        }
+        out += f"data: {json.dumps(last)}\n\n"
+    return out + "data: [DONE]\n\n"
+
+
+def test_stream_turn_yields_text_then_the_whole_response() -> None:
+    seen: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(json.loads(request.content))
+        sse = sse_events(
+            {"role": "assistant", "content": ""}, {"content": "Hel"}, {"content": "lo"}
+        )
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=sse)
+
+    async def collect() -> list[Any]:
+        return [e async for e in llm(handler).stream_turn([Message("user", "hi")])]
+
+    events = asyncio.run(collect())
+    assert [type(e).__name__ for e in events] == ["TextDelta", "TextDelta", "TurnEnd"]
+    assert [e.text for e in events[:2]] == ["Hel", "lo"]
+    end = events[2].response
+    assert (end.text, end.finish_reason, end.tool_calls) == ("Hello", "stop", [])
+    assert (end.usage.input_tokens, end.usage.output_tokens) == (11, 4)
+    assert seen[0]["stream"] is True and seen[0]["stream_options"] == {"include_usage": True}
+
+
+def test_stream_turn_puts_tool_call_fragments_together() -> None:
+    def tool(index: int, **function: str) -> dict[str, Any]:
+        part: dict[str, Any] = {"index": index, "function": function}
+        if "name" in function:
+            part["id"] = f"call_{index}"
+            part["type"] = "function"
+        return {"tool_calls": [part]}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sse = sse_events(
+            {"role": "assistant", "content": None},
+            tool(0, name="grep_code", arguments=""),
+            tool(0, arguments='{"pattern": '),
+            tool(1, name="read_file", arguments='{"application": "a", '),
+            tool(0, arguments='"x"}'),
+            tool(1, arguments='"path": "p.py"}'),
+            finish="tool_calls",
+        )
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=sse)
+
+    async def collect() -> list[Any]:
+        return [e async for e in llm(handler).stream_turn([Message("user", "hi")])]
+
+    (end,) = asyncio.run(collect())
+    assert end.response.finish_reason == "tool_calls" and end.response.text == ""
+    assert [(c.id, c.name, c.arguments) for c in end.response.tool_calls] == [
+        ("call_0", "grep_code", {"pattern": "x"}),
+        ("call_1", "read_file", {"application": "a", "path": "p.py"}),
+    ]
+
+
+def test_stream_turn_rejects_broken_tool_arguments_and_translates_errors() -> None:
+    def broken(request: httpx.Request) -> httpx.Response:
+        sse = sse_events(
+            {
+                "tool_calls": [
+                    {"index": 0, "id": "c", "function": {"name": "t", "arguments": "{oops"}}
+                ]
+            }
+        )
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=sse)
+
+    async def collect(handler: Handler) -> list[Any]:
+        return [e async for e in llm(handler).stream_turn([Message("user", "hi")])]
+
+    with pytest.raises(ProviderResponseError):
+        asyncio.run(collect(broken))
+
+    def refused(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(429, json={"error": {"message": "slow down"}})
+
+    with pytest.raises(ProviderError) as caught:
+        asyncio.run(collect(refused))
+    assert caught.value.retryable
+
+
+def test_turn_events_falls_back_to_complete_for_providers_that_cannot_stream() -> None:
+    from stc.providers import TurnEnd, turn_events
+
+    class Plain:
+        provider, model = "plain", "m"
+
+        async def complete(self, messages: Any, **kwargs: Any) -> LLMResponse:
+            return LLMResponse("whole", [], Usage(1, 1), "stop")
+
+    async def collect() -> list[Any]:
+        return [e async for e in turn_events(Plain(), [Message("user", "hi")], None)]  # type: ignore[arg-type]
+
+    (end,) = asyncio.run(collect())
+    assert isinstance(end, TurnEnd) and end.response.text == "whole"
 
 
 @pytest.mark.parametrize(
