@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository state
 
-Backend skeleton, OpenAI provider adapters (`src/stc/providers/`, tested against mocked HTTP only until `stc check-providers` is run with a real key), the database layer (`src/stc/db/`: migration runner and schema 0001–0005) and indexer stages 1–6 except LLM steps (`src/stc/indexer/`: application detection, hygiene/secrets, file registry, tree-sitter chunking and symbols, signals and static relations, embeddings): `pyproject.toml`, package `stc` in `src/` (CLI, settings, `/api/health`), tests, `Dockerfile`, `docker-compose.yml` (`db` + `api`), and an Angular app shell in `frontend/` (Tailwind with the ui-spec tokens, SpartanNG helm (button only), Lucide icons, light/dark toggle, Transloco `en`, Vitest; placeholder page only). Catalogs, the LLM confirmation of relations, the query engine, the MCP server and the chat UI are **not implemented yet**; the stack in `docs/tech-stack.md` is still a proposal beyond the skeleton.
+Backend skeleton, OpenAI provider adapters (`src/stc/providers/`, tested against mocked HTTP only until `stc check-providers` is run with a real key), the database layer (`src/stc/db/`: migration runner and schema 0001–0006) and indexer stages 1–7 except LLM confirmation of relations (`src/stc/indexer/`: application detection, hygiene/secrets, file registry, tree-sitter chunking and symbols, signals and static relations, embeddings) and per-application catalogs (`src/stc/catalog/`: context, LLM generation with verified evidence, markdown with manual corrections): `pyproject.toml`, package `stc` in `src/` (CLI, settings, `/api/health`), tests, `Dockerfile`, `docker-compose.yml` (`db` + `api`), and an Angular app shell in `frontend/` (Tailwind with the ui-spec tokens, SpartanNG helm (button only), Lucide icons, light/dark toggle, Transloco `en`, Vitest; placeholder page only). The global map, the LLM confirmation of relations, the query engine, the MCP server and the chat UI are **not implemented yet**; the stack in `docs/tech-stack.md` is still a proposal beyond the skeleton.
 
 Main branch: `develop` (GitHub remote `jnascimentogcc/stc`).
 
@@ -18,11 +18,12 @@ uv run pytest                             # all tests
 uv run pytest tests/test_cli.py::test_version   # a single test
 uv run ruff check . && uv run ruff format --check .
 uv run mypy                               # strict
-uv run stc --help                         # CLI (`version`, `migrate-db`, `detect`, `index`, `relations`, `embed`, `check-providers` work; the rest are stubs)
+uv run stc --help                         # CLI (`version`, `migrate-db`, `detect`, `index`, `relations`, `embed`, `catalog`, `check-providers` work; the rest are stubs)
 uv run stc migrate-db                     # needs STC_DB_MIGRATION_URL (+ STC_APP_PASSWORD for the stc_app role)
 uv run stc detect --root <dir>            # list detected applications (no DB)
 uv run stc index --root <dir> [--dry-run] # detect + hygiene + register + chunk + embed (needs STC_DB_URL unless --dry-run; --skip-embeddings to stop after chunking)
 uv run stc relations                      # list application relations with confidence and evidence (--refresh to re-derive)
+uv run stc catalog <application> [--dry-run] # generate one application's catalog into STC_CATALOGS (needs STC_LLM_CATALOG_MODEL)
 uv run stc embed --dry-run                # estimate the embedding run (no external call)
 uv run uvicorn stc.api.app:app --reload   # API on :8000, health at /api/health
 docker compose up --build                 # needs .env (copy .env.example)

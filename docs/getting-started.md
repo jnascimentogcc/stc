@@ -52,7 +52,7 @@ limited `stc_app` role that the application uses, created for you by the next st
 uv run stc migrate-db
 ```
 
-Expect five `Applied 000N_...` lines (running it again prints `Database is up to date.`).
+Expect six `Applied 000N_...` lines (running it again prints `Database is up to date.`).
 
 ## 5. Detect and index (no external calls)
 
@@ -98,7 +98,28 @@ Expect `Embedded 10 chunk(s) ...`. It costs a fraction of a cent. Running it aga
 Optionally, `uv run stc check-providers` makes one tiny call per configured model to verify keys,
 model names and the 1536 embedding dimensions.
 
-## 8. Check the result in the database
+## 8. Generate a catalog (optional, sends the demo code to the LLM)
+
+First see what would be sent, without any external call:
+
+```bash
+uv run stc catalog demo-api --dry-run
+```
+
+Expect `5 of 7 sections have evidence to send to ...` and a rough token estimate. Then generate it
+(set `STC_LLM_CATALOG_MODEL` in `.env` first; it costs a few cents at most):
+
+```bash
+uv run stc catalog demo-api
+```
+
+The result is `catalogs/demo-api.md` in the repository root. Open it: every statement ends with
+`evidence: file:start-end` that you can check, endpoints and relations come from the static
+analysis, and each section starts with an empty `stc:manual` block where you can write
+corrections that survive regeneration. Running the command again says `Up to date` and calls
+nothing.
+
+## 9. Check the result in the database
 
 ```bash
 docker exec stc-dev-db psql -U postgres -d stc -c "select provider, model, vector_dims(embedding) as dims, count(*) from chunk_embeddings group by 1,2,3"
@@ -110,7 +131,7 @@ Expect one row: your provider and model, `1536`, and `10`. To see how the code w
 docker exec stc-dev-db psql -U postgres -d stc -c "select f.path, c.kind, c.name, c.start_line, c.end_line from chunks c join files f on f.id = c.file_id order by f.path, c.start_line"
 ```
 
-## 9. Clean up
+## 10. Clean up
 
 ```bash
 docker rm -f stc-dev-db
