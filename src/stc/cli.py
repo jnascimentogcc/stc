@@ -1,5 +1,6 @@
 """`stc` command line. Commands not yet implemented fail with a clear message."""
 
+import asyncio
 from pathlib import Path
 from typing import Annotated, NoReturn
 
@@ -13,6 +14,12 @@ from stc.indexer.chunk_store import chunk_pending
 from stc.indexer.pipeline import detect_root, scan_root
 from stc.indexer.registry import sync_registry
 from stc.indexer.rootconfig import ConfigError
+from stc.providers import (
+    Message,
+    ProviderError,
+    build_embeddings_client,
+    build_llm_client,
+)
 
 app = typer.Typer(no_args_is_help=True, help="STC — Talk is cheap. Show me the code.")
 
@@ -126,6 +133,34 @@ def index(
             + ", ".join(result.apps_missing),
             err=True,
         )
+
+
+@app.command(name="check-providers")
+def check_providers() -> None:
+    """Make one tiny embeddings call and one tiny chat call to verify keys, models and sizes.
+
+    This sends two short fixed strings to the configured provider (a few tokens, no code)."""
+    settings = get_settings()
+
+    async def run() -> None:
+        embeddings = build_embeddings_client(settings)
+        vectors = await embeddings.embed(["STC provider check"])
+        typer.echo(
+            f"embeddings: {embeddings.provider}/{embeddings.model} -> {len(vectors[0])} dimensions"
+        )
+        for purpose in ("catalog", "chat"):
+            llm = build_llm_client(settings, purpose)
+            reply = await llm.complete([Message("user", "Reply with the single word OK.")])
+            typer.echo(
+                f"llm ({purpose}): {llm.provider}/{llm.model} -> {reply.text.strip()[:40]!r} "
+                f"({reply.usage.input_tokens} in, {reply.usage.output_tokens} out)"
+            )
+
+    try:
+        asyncio.run(run())
+    except ProviderError as exc:
+        typer.echo(f"Provider check failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
 
 
 @app.command()

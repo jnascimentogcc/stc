@@ -4,7 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, SecretStr
+from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -23,12 +23,18 @@ class Settings(BaseSettings):
     db_migration_url: str | None = None
     app_password: SecretStr | None = None
 
+    openai_api_key: SecretStr | None = Field(
+        default=None, validation_alias=AliasChoices("OPENAI_API_KEY", "STC_OPENAI_API_KEY")
+    )
+    openai_base_url: str | None = None  # Azure or any OpenAI-compatible gateway
+
     llm_provider: Literal["openai", "anthropic"] = "openai"
     llm_catalog_model: str | None = None
     llm_chat_model: str | None = None
 
     embeddings_provider: Literal["openai", "voyage", "local"] = "openai"
     embeddings_model: str | None = None
+    embeddings_dimensions: int = Field(default=1536, ge=1)  # must match the vector(1536) columns
     rerank_model: str | None = None
 
     language: str = "en"

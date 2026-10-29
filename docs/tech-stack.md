@@ -41,7 +41,7 @@ Cross-cutting principles:
 | Background tasks | **Own workers on PostgreSQL** (`FOR UPDATE SKIP LOCKED`) | No external broker (§8) |
 | CLI | `stc` (**Typer**) | `index`, `reindex`, `status`, `catalog`, `evaluate`, `migrate-db`, `serve-mcp` |
 | Packaging | **hatchling**, environments with **uv** | `stc` package in `src/` |
-| Quality | **pytest**, **ruff**, **mypy**, **httpx** (test client) | See §7 |
+| Quality | **pytest**, **ruff**, **mypy**, **httpx2** (test client) | See §7 |
 | Logs | **structlog** (JSON) | Never logs source code or secrets |
 
 ## 3. Data
@@ -80,6 +80,7 @@ Applications are processed in parallel, with a limit on concurrency and on reque
 
 - **Launch provider: OpenAI**, for both LLM and embeddings, since it is the only key currently available. **Anthropic** comes in later through configuration alone, without changing the query engine or the pipeline.
 - **Provider interface**: the code talks to two own interfaces (`LLMClient` and `EmbeddingsClient`) and never to an SDK directly. Each provider is an adapter that translates *tool use*, structured output and streaming into a common internal format. Providers can be mixed (for example, chat on Anthropic and embeddings on OpenAI).
+- **OpenAI adapters** (`stc/providers/openai_adapter.py`) use the Chat Completions API (tool calls, JSON-schema structured output, streaming) and the Embeddings API (requests sent in batches, `dimensions` set to `STC_EMBEDDINGS_DIMENSIONS`, 1536 by default to match the `vector(1536)` columns; a response of another size is rejected). `STC_OPENAI_BASE_URL` points them at Azure or any OpenAI-compatible gateway. Calls are spaced by a rate limiter (`STC_LLM_REQUESTS_PER_MIN`) and failures become `ProviderError` with a `retryable` flag (connection errors, 408/409/429 and 5xx are retryable) that never includes prompts or the key. `stc check-providers` makes one tiny real call per client to verify keys and models.
 - **Providers and models are configurable** through environment variables (`STC_LLM_PROVIDER`, `STC_LLM_CATALOG_MODEL`, `STC_LLM_CHAT_MODEL`, `STC_EMBEDDINGS_PROVIDER`, `STC_EMBEDDINGS_MODEL`), never hardcoded.
 - **Changing the embeddings provider or model requires reindexing** the vectors (each vector stores provider, model and version), because dimensions and vector space differ. Changing the LLM does not require reindexing, but catalogs should be regenerated if homogeneity is wanted; the provider used is recorded in each catalog (XCT-05).
 - **Language of generated output** follows `STC_LANGUAGE` (English by default; XCT-07).
