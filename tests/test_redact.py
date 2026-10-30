@@ -18,10 +18,10 @@ from stc.indexer.signal_store import extract_pending, rebuild_relations
 from stc.query import QueryEngine
 
 PASSWORD = "S3cr3tPassw0rd"
-USER = "svc_lmia"
+USER = "svc_shop"
 PROPERTIES = f"""server.port=8080
 apiprefix.v1=/api/v1
-spring.datasource.url=jdbc:mysql://localhost:3306/lmia?useSSL=false&user={USER}&password={PASSWORD}
+spring.datasource.url=jdbc:mysql://localhost:3306/shop?useSSL=false&user={USER}&password={PASSWORD}
 spring.datasource.username={USER}
 spring.datasource.password={PASSWORD}
 spring.mail.password=${{MAIL_PASSWORD}}
@@ -49,7 +49,7 @@ def test_credential_values_are_replaced_and_everything_else_is_kept() -> None:
     assert lines["spring.datasource.password"] == REDACTED
     assert lines["spring.datasource.username"] == REDACTED
     assert lines["spring.datasource.url"] == (
-        f"jdbc:mysql://localhost:3306/lmia?useSSL=false&user={REDACTED}&password={REDACTED}"
+        f"jdbc:mysql://localhost:3306/shop?useSSL=false&user={REDACTED}&password={REDACTED}"
     )
     # Kept: other settings, placeholders, empty values, numbers and booleans.
     assert lines["server.port"] == "8080" and lines["apiprefix.v1"] == "/api/v1"
