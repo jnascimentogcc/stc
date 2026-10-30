@@ -4,10 +4,20 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-30
+
+Applications no longer have to live in one local folder.
+
 ### Added
 
 - **Sources**: applications can come from several folders. `STC_ROOT` stays the source called `default`; more are declared in `sources.toml` (`STC_SOURCES`). `stc detect`, `index`, `reindex` and `status` accept `--source`. Each application remembers its source (migration 0009), so the chat and the MCP server read every file from the right folder.
-- **GitHub as a source** (`type = "github"` in `sources.toml`): `stc sync [--source NAME] [--dry-run]` lists the repositories of an organization or user (filters: `include`, `exclude`, archived, forks, a branch, or an explicit list) and keeps a shallow, read-only clone of each under `STC_DATA/sources/<name>/`. The token (`STC_GITHUB_TOKEN`) reaches `git` only through the environment, for the host of the repository, and is never logged. A repository that fails does not stop the others. The code version of an application is the commit of its clone.
+- **GitHub as a source** (`type = "github"` in `sources.toml`): `stc sync [--source NAME] [--dry-run]` lists the repositories of an organization or user (filters: `include`, `exclude`, archived, forks, a branch, or an explicit list) and keeps a shallow, read-only clone of each under `STC_DATA/sources/<name>/`. The token (`STC_GITHUB_TOKEN`) reaches `git` only through the environment, for the host of the repository, and is never logged. A repository that fails does not stop the others. The code version of an application is the commit of its clone. For a user (not an organization) whose token is their own, the private repositories are listed too.
+
+### Notes
+
+- Migration 0009 adds `applications.source`: run `stc migrate-db` after upgrading.
+- `stc index --source NAME` only processes the files of that source; pending files of other sources wait for their own run.
+- One token (`STC_GITHUB_TOKEN`) serves every GitHub source. GitLab, GitHub App authentication and Docker Compose support for extra sources are not included yet.
 
 ## [0.1.0] - 2026-10-29
 
@@ -30,4 +40,5 @@ First pre-release: the whole pipeline works end to end.
 - Anthropic and Voyage providers.
 - Gradle and Gemfile manifests.
 
+[0.2.0]: https://github.com/jnascimentogcc/stc/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/jnascimentogcc/stc/releases/tag/v0.1.0
