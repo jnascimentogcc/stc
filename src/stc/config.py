@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     concurrency: int = Field(default=4, ge=1)
     llm_requests_per_min: int = Field(default=60, ge=1)
 
+    github_token: SecretStr | None = None  # read-only access to the contents of the repositories
+
     mcp_token: str | None = None
     mcp_host: str = "127.0.0.1"
     mcp_port: int = Field(default=8765, ge=1, le=65535)
@@ -58,7 +60,7 @@ class Settings(BaseSettings):
 
     def roots(self) -> Roots:
         """The folders the applications are read from, by source."""
-        return build_roots(self.root, self.sources)
+        return build_roots(self.root, self.sources, self.data)
 
 
 @lru_cache

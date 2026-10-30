@@ -74,7 +74,11 @@ def test_a_bad_sources_file_says_what_is_wrong(tmp_path: Path, text: str, messag
         load_sources(tmp_path / "sources.toml")
 
 
-def test_the_root_is_the_default_source_next_to_the_declared_ones(tmp_path: Path) -> None:
+def test_the_root_is_the_default_source_next_to_the_declared_ones(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "empty").mkdir()
+    monkeypatch.chdir(tmp_path / "empty")  # a sources.toml of the current folder must not leak in
     write(tmp_path, "sources.toml", '[[sources]]\nname = "legacy"\npath = "old"\n')
     roots = build_roots(tmp_path / "root", tmp_path / "sources.toml")
     assert list(roots.paths) == [DEFAULT_SOURCE, "legacy"]
@@ -139,7 +143,10 @@ def test_a_source_that_is_not_configured_cannot_be_read_but_nothing_else_breaks(
     conn, roots, tmp_path = indexed
     partial = roots.only("shop")
     stats = chunk_pending(conn, partial)
-    assert stats.files_chunked >= 2 and stats.files_skipped >= 2  # billing's files: no folder
+    # Only the files of the sources being processed are pending: billing's are left for its own
+    # run, not counted as unreadable.
+    assert stats.files_chunked >= 2 and stats.files_skipped == 0
+    assert chunk_pending(conn, roots).files_chunked >= 2  # ...and they are there when asked
     engine = QueryEngine(conn, root=partial, catalogs=tmp_path / "catalogs")
     assert "fetch(" in engine.read_file("web", "client.js").text
     with pytest.raises(QueryError, match="source 'billing' of billing is not configured"):

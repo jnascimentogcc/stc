@@ -323,7 +323,48 @@ uv run stc detect                      # every source
 uv run stc index --source legacy       # only one (also: reindex, status --check, detect)
 ```
 
-Docker Compose mounts only `STC_ROOT`; run the `stc` commands on your machine to use more folders.
+### GitHub
+
+A source can also be a GitHub organization or user. `stc sync` clones its repositories (shallow and
+read-only; nothing is ever pushed) into `STC_DATA/sources/<name>/`, and `stc index` then reads that
+folder like any other:
+
+```toml
+[[sources]]
+name = "my-org"
+type = "github"
+owner = "my-org"                # an organization or a user
+include = ["svc-*"]             # optional filters on the repository name
+exclude = ["*-archive"]
+# exclude_archived = true       # default; exclude_forks = false by default
+# branch = "main"               # default: the default branch of each repository
+# repositories = ["svc-a"]      # only these, by name
+# api_url = "https://github.example.com/api/v3"   # GitHub Enterprise
+```
+
+Create a **fine-grained personal access token** (or use a service account) limited to the
+organization and the repositories you want, with read-only **Contents** and **Metadata**, and put it
+in `.env` as `STC_GITHUB_TOKEN`. If the organization uses SAML SSO the token must be authorized for
+it, otherwise the listing comes back empty or denied. Without a token only public repositories can
+be read, with a low rate limit.
+
+```bash
+uv run stc sync --dry-run              # what would be cloned or updated
+uv run stc sync                        # clone or update
+uv run stc index --source my-org       # then index what changed
+```
+
+For a **user** (not an organization), GitHub lists the private repositories only to that user's own
+token: the token must belong to `owner`, and a fine-grained token needs "All repositories" (or the
+private ones selected) under its repository access. For someone else's account only public
+repositories exist for you.
+
+Each sync resets the clones to the remote, so local changes in them are lost (they are copies).
+A repository that stops being listed (archived, renamed, excluded) stays on disk and indexed until
+you delete its folder; `stc sync` tells you which ones. The code version of an application is the
+commit of its clone.
+
+Docker Compose mounts only `STC_ROOT`; run the `stc` commands on your machine to use more sources.
 
 ## 17. Run everything with Docker Compose
 

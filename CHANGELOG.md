@@ -7,6 +7,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 ### Added
 
 - **Sources**: applications can come from several folders. `STC_ROOT` stays the source called `default`; more are declared in `sources.toml` (`STC_SOURCES`). `stc detect`, `index`, `reindex` and `status` accept `--source`. Each application remembers its source (migration 0009), so the chat and the MCP server read every file from the right folder.
+- **GitHub as a source** (`type = "github"` in `sources.toml`): `stc sync [--source NAME] [--dry-run]` lists the repositories of an organization or user (filters: `include`, `exclude`, archived, forks, a branch, or an explicit list) and keeps a shallow, read-only clone of each under `STC_DATA/sources/<name>/`. The token (`STC_GITHUB_TOKEN`) reaches `git` only through the environment, for the host of the repository, and is never logged. A repository that fails does not stop the others. The code version of an application is the commit of its clone.
 
 ## [0.1.0] - 2026-10-29
 

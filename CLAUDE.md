@@ -26,6 +26,7 @@ uv run stc index --root <dir> [--dry-run] # detect + hygiene + register + chunk 
 uv run stc relations                      # list application relations with confidence and evidence (--refresh to re-derive)
 uv run stc catalog <application>|--all [--dry-run] # generate catalog(s) + refresh _global-map.md in STC_CATALOGS (needs STC_LLM_CATALOG_MODEL)
 uv run stc serve-mcp [--transport http]   # MCP server (stdio; http needs STC_MCP_TOKEN)
+uv run stc sync [--source S] [--dry-run]  # clone/update the GitHub sources (STC_GITHUB_TOKEN), then `stc index`
 uv run stc ask "which apps call X?" [--app A] # one question through the chat agent (needs STC_LLM_CHAT_MODEL)
 uv run stc relations [--confirm]           # list relations with verdicts; --confirm asks the LLM about uncertain ones
 uv run stc corrections list|approve|reject # catalog corrections proposed from the chat wait for a maintainer

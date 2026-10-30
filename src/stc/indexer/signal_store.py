@@ -59,8 +59,8 @@ def extract_pending(
         " FROM files f JOIN applications a ON a.id = f.application_id"
         " WHERE f.status IN ('indexed', 'unsupported')"
         " AND f.signals_key IS DISTINCT FROM f.content_sha256 || ':' || %s"
-        " AND (%s::text IS NULL OR a.name = %s) ORDER BY f.id",
-        (SIGNALS_VERSION, application, application),
+        " AND (%s::text IS NULL OR a.name = %s) AND a.source = ANY(%s) ORDER BY f.id",
+        (SIGNALS_VERSION, application, application, list(roots.paths)),
     ).fetchall()
     for file_id, app_id, app_path, file_path, language, sha, source in rows:
         path = PurePosixPath(str(file_path))

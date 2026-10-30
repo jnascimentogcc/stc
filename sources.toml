@@ -1,3 +1,9 @@
 [[sources]]
 name = "legacy"
 path = "C:/Users/JorgeNascimento/proj/stc-real"
+
+[[sources]]
+name = "jnascimentogcc"
+type = "github"
+owner = "jnascimentogcc"        # organização ou usuário
+include = ["rastro"]                  # filtros opcionais por nome

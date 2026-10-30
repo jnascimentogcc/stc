@@ -142,7 +142,8 @@ The reverse proxy and hosting are yet to be decided (§11).
 | Variable | Purpose |
 |---|---|
 | `STC_ROOT` | Folder with the applications (mounted read-only); the source called `default` |
-| `STC_SOURCES` | `sources.toml` that declares more folders (sources) with applications; default `./sources.toml` |
+| `STC_SOURCES` | `sources.toml` that declares more sources (local folders, GitHub organizations or users); default `./sources.toml` |
+| `STC_GITHUB_TOKEN` | Token for `stc sync` (read-only access to the contents of the repositories) |
 | `STC_CATALOGS`, `STC_DATA` | Folders for the catalogs and for working data |
 | `STC_DB_URL`, `STC_DB_MIGRATION_URL` | Connection for the API/workers and for migrations |
 | `POSTGRES_PASSWORD`, `STC_APP_PASSWORD` | Database passwords |

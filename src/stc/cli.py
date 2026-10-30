@@ -49,7 +49,7 @@ from stc.providers import (
 )
 from stc.query.cli import query_app
 from stc.query.models import QueryError
-from stc.sources import Roots, SourcesError
+from stc.sources import GitHubSource, Roots, SourcesError, github_folder, read_sources, sources_file
 
 app = typer.Typer(no_args_is_help=True, help="STC — Talk is cheap. Show me the code.")
 app.add_typer(query_app, name="query")
@@ -94,7 +94,11 @@ def _resolve_roots(root: Path | None, source: str | None = None) -> Roots:
         raise typer.Exit(code=2)
     for name, path in roots.paths.items():
         if not path.is_dir():
-            typer.echo(f"The source {name!r} is not a directory: {path}", err=True)
+            typer.echo(
+                f"The source {name!r} is not a directory: {path} "
+                "(a GitHub source is created by `stc sync`)",
+                err=True,
+            )
             raise typer.Exit(code=2)
     return roots
 
@@ -109,6 +113,70 @@ YesOption = Annotated[
 ]
 # Above this many estimated tokens the embedding run asks for confirmation (LCY-07).
 CONFIRM_TOKENS = 1_000_000
+
+
+@app.command()
+def sync(
+    source: SourceOption = None,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="List what would be cloned or updated.")
+    ] = False,
+) -> None:
+    """Clone or update the repositories of the GitHub sources (shallow, read-only).
+
+    The token is STC_GITHUB_TOKEN: read-only access to the contents is enough. Run `stc index`
+    afterwards to index what changed."""
+    from stc.github import GitHubError, sync_source
+
+    settings = get_settings()
+    try:
+        file = sources_file(settings.sources)
+        configured = read_sources(file) if file else {}
+        if source is not None and source not in configured:
+            known = ", ".join(sorted(configured)) or "none"
+            raise SourcesError(f"No source named {source!r}. Configured: {known}")
+    except SourcesError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+    remote = {
+        name: s
+        for name, s in configured.items()
+        if isinstance(s, GitHubSource) and source in (None, name)
+    }
+    if not remote:
+        typer.echo("No GitHub source to sync (declare one in sources.toml).", err=True)
+        raise typer.Exit(code=2)
+    token = settings.github_token.get_secret_value() if settings.github_token else None
+    if token is None:
+        typer.echo(
+            "STC_GITHUB_TOKEN is not set: only public repositories can be read, with a low "
+            "rate limit.",
+            err=True,
+        )
+    failures = 0
+    for name, config in remote.items():
+        folder = github_folder(settings.data, name)
+        typer.echo(f"{name}: {config.owner} -> {folder}")
+        try:
+            report = sync_source(config, folder, token, dry_run=dry_run)
+        except GitHubError as exc:
+            typer.echo(f"  failed: {exc}", err=True)
+            failures += 1
+            continue
+        for result in report.results:
+            typer.echo(f"  {result.action}: {result.name} {result.detail}".rstrip())
+        for repo_name, reason in report.skipped:
+            typer.echo(f"  skipped: {repo_name} ({reason})")
+        if report.not_listed:
+            typer.echo(
+                "  on disk but not listed now (still indexed; delete the folder to drop it): "
+                + ", ".join(report.not_listed),
+                err=True,
+            )
+        failures += len(report.failed)
+    if failures:
+        typer.echo(f"{failures} failure(s).", err=True)
+        raise typer.Exit(code=1)
 
 
 @app.command()
