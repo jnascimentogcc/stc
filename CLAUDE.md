@@ -21,7 +21,7 @@ uv run mypy                               # strict
 uv run stc --env-file .env.other <cmd>    # any command with another settings file (also STC_ENV_FILE)
 uv run stc --help                         # CLI (`version`, `migrate-db`, `detect`, `index`, `relations`, `embed`, `catalog`, `map`, `query`, `serve-mcp`, `ask`, `evaluate`, `reindex`, `status`, `corrections`, `check-providers` work; the rest are stubs)
 uv run stc migrate-db                     # needs STC_DB_MIGRATION_URL (+ STC_APP_PASSWORD for the stc_app role)
-uv run stc detect --root <dir>            # list detected applications (no DB)
+uv run stc detect --root <dir>            # list detected applications (no DB); --source NAME for one folder of sources.toml
 uv run stc index --root <dir> [--dry-run] # detect + hygiene + register + chunk + embed (needs STC_DB_URL unless --dry-run; --skip-embeddings to stop after chunking)
 uv run stc relations                      # list application relations with confidence and evidence (--refresh to re-derive)
 uv run stc catalog <application>|--all [--dry-run] # generate catalog(s) + refresh _global-map.md in STC_CATALOGS (needs STC_LLM_CATALOG_MODEL)

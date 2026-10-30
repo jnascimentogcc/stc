@@ -24,6 +24,7 @@ from stc.query.models import (
     QueryError,
     Source,
 )
+from stc.sources import Roots, as_roots
 
 MAX_READ_LINES = 400
 MAX_DEPTH = 6
@@ -291,7 +292,7 @@ def index_status(
 
 def read_file(
     conn: psycopg.Connection,
-    root: Path | None,
+    root: Path | Roots | None,
     application: str,
     path: str,
     *,
@@ -301,27 +302,32 @@ def read_file(
     """A line range of an indexed file, read from the Root. Secret and excluded files are
     refused without being opened (QRY-06)."""
     require_application(conn, application)
-    if root is None:
-        raise QueryError(
-            "unavailable", "The Root is not configured (STC_ROOT), so files cannot be read."
-        )
-    if not root.is_dir():
+    roots = as_roots(root) if root is not None else None
+    if not roots:
         raise QueryError(
             "unavailable",
-            f"STC_ROOT ({root}) is not an existing folder: set it to the folder that was indexed.",
+            "No source is configured (STC_ROOT or sources.toml), so files cannot be read.",
         )
     relative = PurePosixPath(path.replace("\\", "/"))
     if relative.is_absolute() or ".." in relative.parts or not relative.parts:
         raise QueryError("invalid_argument", "The path must be relative to the application.")
     row = conn.execute(
-        "SELECT f.id, f.status, f.exclusion_reason, f.content_sha256, a.path, a.indexed_version"
+        "SELECT f.id, f.status, f.exclusion_reason, f.content_sha256, a.path, a.indexed_version,"
+        " a.source"
         " FROM files f JOIN applications a ON a.id = f.application_id"
         " WHERE a.name = %s AND f.path = %s",
         (application, str(relative)),
     ).fetchone()
     if row is None:
         raise QueryError("not_found", f"{application}/{relative} is not an indexed file.")
-    _file_id, status, reason, sha, app_path, version = row
+    _file_id, status, reason, sha, app_path, version, source = row
+    base = roots.get(str(source))
+    if base is None or not base.is_dir():
+        raise QueryError(
+            "unavailable",
+            f"The source {source!r} of {application} is not configured or is not an existing"
+            " folder: set it to the folder that was indexed.",
+        )
     if status == "secret":
         raise QueryError(
             "forbidden", f"{application}/{relative} is withheld: it may contain secrets."
@@ -332,8 +338,8 @@ def read_file(
         )
     if start_line < 1 or (end_line is not None and end_line < start_line):
         raise QueryError("invalid_argument", "Invalid line range.")
-    target = (root / app_path / str(relative)).resolve()
-    if not target.is_relative_to(root.resolve()) or not target.is_file():
+    target = (base / app_path / str(relative)).resolve()
+    if not target.is_relative_to(base.resolve()) or not target.is_file():
         raise QueryError("not_found", f"{application}/{relative} is no longer on disk.")
     data = target.read_bytes()
     stale = bool(sha) and hashlib.sha256(data).hexdigest() != sha

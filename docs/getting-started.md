@@ -302,6 +302,29 @@ shown first, kept on every regeneration and given to the model as authoritative.
 `stc catalog <application>` to regenerate the section with it. `stc status` tells you when proposals
 are waiting.
 
+## More than one folder
+
+`STC_ROOT` is one folder. To index applications that live in several, list the others in a
+`sources.toml` (next to your `.env`, or anywhere with `STC_SOURCES=<file>`):
+
+```toml
+[[sources]]
+name = "legacy"                 # lower case letters, digits, - and _
+path = "D:/code/legacy"         # relative paths are relative to this file
+```
+
+`STC_ROOT`, if set, is the source called `default`. Every source is scanned like the Root: it has
+its own `stc.toml`, and application names must be unique across sources (rename one in its
+`stc.toml`). An application remembers its source, so relations between applications of different
+folders work and the chat reads each file from the right place.
+
+```bash
+uv run stc detect                      # every source
+uv run stc index --source legacy       # only one (also: reindex, status --check, detect)
+```
+
+Docker Compose mounts only `STC_ROOT`; run the `stc` commands on your machine to use more folders.
+
 ## 17. Run everything with Docker Compose
 
 Instead of steps 1 to 14 on your machine, the whole system can run in containers: database,

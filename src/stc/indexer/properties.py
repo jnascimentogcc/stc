@@ -17,6 +17,7 @@ import yaml
 
 from stc.indexer.chunk_store import _read_verified
 from stc.indexer.signals import normalize_path
+from stc.sources import Roots, as_roots
 
 _NAME = re.compile(r"^(application|bootstrap)([-_.][\w.\-]+)?\.(properties|ya?ml)$", re.IGNORECASE)
 _PLACEHOLDER = re.compile(r"\$\{([A-Za-z][\w.\-]*)(?::([^}]*))?\}")
@@ -66,11 +67,11 @@ def parse_file(path: str, text: str) -> dict[str, str]:
     return parse_yaml(text)
 
 
-def load_properties(conn: psycopg.Connection, root: Path) -> dict[int, dict[str, str]]:
+def load_properties(conn: psycopg.Connection, root: Path | Roots) -> dict[int, dict[str, str]]:
     """application id -> its properties. The base file (`application.*`) wins over a profile
     file (`application-dev.*`), which only fills what is missing."""
     rows = conn.execute(
-        "SELECT f.application_id, a.path, f.path, f.content_sha256 FROM files f"
+        "SELECT f.application_id, a.path, f.path, f.content_sha256, a.source FROM files f"
         " JOIN applications a ON a.id = f.application_id"
         " WHERE f.status IN ('indexed', 'unsupported') AND f.size_bytes <= %s",
         (MAX_BYTES,),
@@ -78,8 +79,10 @@ def load_properties(conn: psycopg.Connection, root: Path) -> dict[int, dict[str,
     chosen = [r for r in rows if is_properties_file(str(r[2]))]
     chosen.sort(key=lambda r: (len(PurePosixPath(str(r[2])).name), str(r[2])))  # base files first
     out: dict[int, dict[str, str]] = {}
-    for app_id, app_path, file_path, sha in chosen:
-        text = _read_verified(root / str(app_path) / str(file_path), str(sha))
+    roots = as_roots(root)
+    for app_id, app_path, file_path, sha, source in chosen:
+        base = roots.get(str(source))
+        text = _read_verified(base / str(app_path) / str(file_path), str(sha)) if base else None
         if text is None:
             continue
         merged = out.setdefault(int(app_id), {})

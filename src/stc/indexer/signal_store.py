@@ -22,6 +22,7 @@ from stc.indexer.relations import (
     derive_relations,
 )
 from stc.indexer.signals import EXTRACTOR_VERSION, extract_signals, wanted
+from stc.sources import Roots, as_roots
 
 
 @dataclass
@@ -49,18 +50,19 @@ def signals_key(content_sha256: str) -> str:
 
 
 def extract_pending(
-    conn: psycopg.Connection, root: Path, *, application: str | None = None
+    conn: psycopg.Connection, root: Path | Roots, *, application: str | None = None
 ) -> SignalStats:
     stats = SignalStats()
+    roots = as_roots(root)
     rows = conn.execute(
-        "SELECT f.id, f.application_id, a.path, f.path, f.language, f.content_sha256"
+        "SELECT f.id, f.application_id, a.path, f.path, f.language, f.content_sha256, a.source"
         " FROM files f JOIN applications a ON a.id = f.application_id"
         " WHERE f.status IN ('indexed', 'unsupported')"
         " AND f.signals_key IS DISTINCT FROM f.content_sha256 || ':' || %s"
         " AND (%s::text IS NULL OR a.name = %s) ORDER BY f.id",
         (SIGNALS_VERSION, application, application),
     ).fetchall()
-    for file_id, app_id, app_path, file_path, language, sha in rows:
+    for file_id, app_id, app_path, file_path, language, sha, source in rows:
         path = PurePosixPath(str(file_path))
         if not wanted(path, language):
             conn.execute(
@@ -68,7 +70,8 @@ def extract_pending(
             )
             stats.files_without_signals_support += 1
             continue
-        text = _read_verified(root / str(app_path) / str(file_path), str(sha))
+        base = roots.get(str(source))
+        text = _read_verified(base / str(app_path) / str(file_path), str(sha)) if base else None
         if text is None:
             stats.files_skipped += 1
             continue
@@ -98,7 +101,7 @@ def extract_pending(
 def rebuild_relations(
     conn: psycopg.Connection,
     aliases: Mapping[str, Sequence[str]] | None = None,
-    root: Path | None = None,
+    root: Path | Roots | None = None,
 ) -> RelationStats:
     """Derive the relations from the stored signals. With the `root`, a `${property}` in the path
     of an endpoint is given its value from the application's configuration files first."""

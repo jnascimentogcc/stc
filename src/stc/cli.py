@@ -27,7 +27,7 @@ from stc.indexer.chunk_store import chunk_pending
 from stc.indexer.confirm import candidates, confirm_relations
 from stc.indexer.confirm import estimate_tokens as estimate_confirm
 from stc.indexer.embed_store import EmbedStats, embed_pending, estimate_pending
-from stc.indexer.pipeline import detect_root, host_aliases, scan_root
+from stc.indexer.pipeline import detect_roots, host_aliases, scan_roots
 from stc.indexer.registry import sync_registry
 from stc.indexer.rootconfig import ConfigError
 from stc.indexer.runs import finish_run, has_finished_run, recent_runs, start_run
@@ -49,6 +49,7 @@ from stc.providers import (
 )
 from stc.query.cli import query_app
 from stc.query.models import QueryError
+from stc.sources import Roots, SourcesError
 
 app = typer.Typer(no_args_is_help=True, help="STC — Talk is cheap. Show me the code.")
 app.add_typer(query_app, name="query")
@@ -78,18 +79,30 @@ def version() -> None:
     typer.echo(__version__)
 
 
-def _resolve_root(root: Path | None) -> Path:
-    chosen = root or get_settings().root
-    if chosen is None:
-        typer.echo("No Root given: use --root or set STC_ROOT.", err=True)
+def _resolve_roots(root: Path | None, source: str | None = None) -> Roots:
+    """The folders to read: `--root` alone, or STC_ROOT plus the sources of sources.toml,
+    optionally narrowed to one source."""
+    try:
+        roots = Roots.single(root) if root is not None else get_settings().roots()
+        if source is not None:
+            roots = roots.only(source)
+    except SourcesError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+    if not roots:
+        typer.echo("No Root given: use --root, set STC_ROOT or declare sources.toml.", err=True)
         raise typer.Exit(code=2)
-    if not chosen.is_dir():
-        typer.echo(f"Root is not a directory: {chosen}", err=True)
-        raise typer.Exit(code=2)
-    return chosen
+    for name, path in roots.paths.items():
+        if not path.is_dir():
+            typer.echo(f"The source {name!r} is not a directory: {path}", err=True)
+            raise typer.Exit(code=2)
+    return roots
 
 
 RootOption = Annotated[Path | None, typer.Option("--root", help="Folder with the applications.")]
+SourceOption = Annotated[
+    str | None, typer.Option("--source", help="Only this source (see sources.toml).")
+]
 
 YesOption = Annotated[
     bool, typer.Option("--yes", help="Do not ask for confirmation of a large embedding run.")
@@ -99,23 +112,25 @@ CONFIRM_TOKENS = 1_000_000
 
 
 @app.command()
-def detect(root: RootOption = None) -> None:
+def detect(root: RootOption = None, source: SourceOption = None) -> None:
     """List the applications detected in the Root (no database needed)."""
-    root = _resolve_root(root)
+    roots = _resolve_roots(root, source)
     try:
-        specs = detect_root(root)
+        specs = detect_roots(roots)
     except (ConfigError, ValueError) as exc:
         typer.echo(f"Detection failed: {exc}", err=True)
         raise typer.Exit(code=1) from exc
     for spec in specs:
         origin = "manual" if spec.detected_by == "manual" else ", ".join(spec.markers)
-        typer.echo(f"{spec.name}	{spec.base.as_posix()}	{origin}")
+        where = spec.base.as_posix() if len(roots.paths) == 1 else f"{spec.source}:{spec.base}"
+        typer.echo(f"{spec.name}	{where}	{origin}")
     typer.echo(f"{len(specs)} application(s) detected.", err=True)
 
 
 @app.command()
 def index(
     root: RootOption = None,
+    source: SourceOption = None,
     dry_run: Annotated[
         bool, typer.Option("--dry-run", help="Scan without touching the DB.")
     ] = False,
@@ -132,6 +147,7 @@ def index(
     Incremental: only files that changed since the last run are reprocessed (LCY-01)."""
     _run_index(
         root,
+        source,
         only=None,
         force=False,
         dry_run=dry_run,
@@ -147,6 +163,7 @@ def reindex(
         str | None, typer.Argument(help="One application (default: the whole Root).")
     ] = None,
     root: RootOption = None,
+    source: SourceOption = None,
     skip_embeddings: Annotated[
         bool, typer.Option("--skip-embeddings", help="Stop after chunking.")
     ] = False,
@@ -159,6 +176,7 @@ def reindex(
     code changed."""
     _run_index(
         root,
+        source,
         only=application,
         force=True,
         dry_run=False,
@@ -170,6 +188,7 @@ def reindex(
 
 def _run_index(
     root_option: Path | None,
+    source: str | None,
     *,
     only: str | None,
     force: bool,
@@ -178,9 +197,9 @@ def _run_index(
     skip_embeddings: bool,
     yes: bool,
 ) -> None:
-    root = _resolve_root(root_option)
+    root = _resolve_roots(root_option, source)
     try:
-        scanned = scan_root(root, only=only)
+        scanned = scan_roots(root, only=only)
     except (ConfigError, ValueError) as exc:
         typer.echo(f"Indexing failed: {exc}", err=True)
         raise typer.Exit(code=1) from exc
@@ -231,7 +250,7 @@ def _run_index(
 
 def _index_stages(
     settings: Settings,
-    root: Path,
+    root: Roots,
     scanned: list[ScannedApplication],
     summary: dict[str, object],
     only: str | None,
@@ -245,7 +264,13 @@ def _index_stages(
     status = "succeeded"
     try:
         with psycopg.connect(settings.db_url) as conn:
-            result = sync_registry(conn, scanned, prune=prune, partial=only is not None)
+            result = sync_registry(
+                conn,
+                scanned,
+                prune=prune,
+                partial=only is not None,
+                sources=set(root.paths),
+            )
             if force:
                 conn.execute(
                     "UPDATE files SET chunked_key = NULL, signals_key = NULL"
@@ -395,7 +420,7 @@ def _embed_stage(
     return stats
 
 
-def _relations_stage(settings: Settings, root: Path) -> tuple[SignalStats, RelationStats]:
+def _relations_stage(settings: Settings, root: Roots) -> tuple[SignalStats, RelationStats]:
     if settings.db_url is None:
         typer.echo("STC_DB_URL is not set.", err=True)
         raise typer.Exit(code=2)
@@ -451,7 +476,7 @@ def relations(
         typer.echo("STC_DB_URL is not set.", err=True)
         raise typer.Exit(code=2)
     if refresh:
-        _relations_stage(settings, _resolve_root(root))
+        _relations_stage(settings, _resolve_roots(root))
     try:
         if confirm:
             _confirm_stage(settings, recheck=recheck, dry_run=dry_run, yes=yes)
@@ -575,6 +600,7 @@ def status(
         ),
     ] = False,
     root: RootOption = None,
+    source: SourceOption = None,
 ) -> None:
     """Show what is indexed, what is pending and how the last runs went (XCT-05)."""
     from stc.indexer.changes import pending_changes, removed_applications
@@ -587,9 +613,9 @@ def status(
         raise typer.Exit(code=2)
     scanned = None
     if check:
-        chosen = _resolve_root(root)
+        chosen = _resolve_roots(root, source)
         try:
-            scanned = scan_root(chosen, only=application)
+            scanned = scan_roots(chosen, only=application)
         except (ConfigError, ValueError) as exc:
             typer.echo(f"Scan failed: {exc}", err=True)
             raise typer.Exit(code=1) from exc
@@ -617,7 +643,11 @@ def status(
             unjudged = int(unjudged_row[0]) if unjudged_row else 0
             proposals = pending_corrections(conn)
             changes = pending_changes(conn, scanned) if scanned is not None else None
-            gone = removed_applications(conn, scanned) if scanned and not application else []
+            gone = (
+                removed_applications(conn, scanned, chosen.paths)
+                if scanned and not application
+                else []
+            )
     except psycopg.Error as exc:
         typer.echo(f"Database error: {exc}", err=True)
         raise typer.Exit(code=1) from exc

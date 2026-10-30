@@ -95,7 +95,7 @@ def build_server(
             with psycopg.connect(settings.db_url, autocommit=True) as conn:
                 engine = QueryEngine(
                     conn,
-                    root=settings.root,
+                    root=settings.roots(),
                     catalogs=settings.catalogs,
                     embedder=embedder,
                     scope=scope,

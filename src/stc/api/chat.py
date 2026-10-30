@@ -132,7 +132,7 @@ def build_chat_router(
         files are refused, like in every other read."""
 
         def read(conn: psycopg.Connection) -> dict[str, Any]:
-            engine = QueryEngine(conn, root=settings.root, catalogs=settings.catalogs)
+            engine = QueryEngine(conn, root=settings.roots(), catalogs=settings.catalogs)
             piece = engine.read_file(application, path, start_line=start_line, end_line=end_line)
             return to_data(piece)  # type: ignore[no-any-return]
 

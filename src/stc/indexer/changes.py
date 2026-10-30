@@ -3,6 +3,7 @@
 Compares a fresh scan with the files table: the same content hash and classification means
 unchanged, exactly as `sync_registry` decides."""
 
+from collections.abc import Collection
 from dataclasses import dataclass
 
 import psycopg
@@ -62,9 +63,10 @@ def pending_changes(
     return out
 
 
-def removed_applications(conn: psycopg.Connection, scanned: list[ScannedApplication]) -> list[str]:
-    """Indexed applications that the Root no longer contains."""
+def removed_applications(
+    conn: psycopg.Connection, scanned: list[ScannedApplication], sources: Collection[str]
+) -> list[str]:
+    """Indexed applications that the scanned sources no longer contain."""
     seen = {a.spec.name for a in scanned}
-    return sorted(
-        str(r[0]) for r in conn.execute("SELECT name FROM applications") if r[0] not in seen
-    )
+    rows = conn.execute("SELECT name FROM applications WHERE source = ANY(%s)", (list(sources),))
+    return sorted(str(r[0]) for r in rows if r[0] not in seen)

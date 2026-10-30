@@ -8,6 +8,8 @@ from typing import Literal
 from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from stc.sources import Roots, build_roots
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -17,6 +19,7 @@ class Settings(BaseSettings):
     )
 
     root: Path | None = None
+    sources: Path | None = None  # sources.toml with more folders (default: ./sources.toml)
     catalogs: Path = Path("./catalogs")
     data: Path = Path("./data")
 
@@ -52,6 +55,10 @@ class Settings(BaseSettings):
     mcp_port: int = Field(default=8765, ge=1, le=65535)
     environment: Literal["development", "production"] = "development"
     public_url: str = "http://localhost:8000"
+
+    def roots(self) -> Roots:
+        """The folders the applications are read from, by source."""
+        return build_roots(self.root, self.sources)
 
 
 @lru_cache

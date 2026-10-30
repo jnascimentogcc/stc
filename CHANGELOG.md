@@ -2,6 +2,12 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **Sources**: applications can come from several folders. `STC_ROOT` stays the source called `default`; more are declared in `sources.toml` (`STC_SOURCES`). `stc detect`, `index`, `reindex` and `status` accept `--source`. Each application remembers its source (migration 0009), so the chat and the MCP server read every file from the right folder.
+
 ## [0.1.0] - 2026-10-29
 
 First pre-release: the whole pipeline works end to end.

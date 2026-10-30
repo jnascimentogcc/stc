@@ -33,7 +33,7 @@ Chat and MCP are clients of the same engine; they do not duplicate search logic.
 
 | ID | Requirement |
 |---|---|
-| IDX-01 | Take the path of a Root as input and traverse it recursively. |
+| IDX-01 | Take the path of a Root as input and traverse it recursively. More than one folder can be declared as *sources* (`sources.toml`); every application remembers the source it came from, and each source keeps its own `stc.toml`. |
 | IDX-02 | Automatically detect the applications inside the Root based on project markers (manifests, build files, solution files, etc.), regardless of language. |
 | IDX-03 | Let the user correct the detection: include, exclude, merge or split applications, and give them a name. |
 | IDX-04 | Support applications in multiple languages and technologies; files in unsupported languages are handled as text and flagged. |

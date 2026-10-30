@@ -18,6 +18,7 @@ from typing import Literal
 
 from stc.indexer.exclusions import Exclusions
 from stc.indexer.rootconfig import ApplicationConfig, RootConfig
+from stc.sources import DEFAULT_SOURCE
 
 # Marker file name patterns that make a directory an application.
 _APP_MARKERS = (
@@ -40,6 +41,7 @@ class ApplicationSpec:
     roots: tuple[PurePosixPath, ...]
     detected_by: DetectedBy
     markers: tuple[str, ...] = field(default=())
+    source: str = DEFAULT_SOURCE  # the source (folder) it was found in
 
 
 def detect_applications(root: Path, config: RootConfig | None = None) -> list[ApplicationSpec]:

@@ -108,7 +108,7 @@ def test_pending_changes_without_writing(db: psycopg.Connection, tmp_path: Path)
     assert {str(r[0]) for r in db.execute("SELECT name FROM applications")} == {"svc", "web"}
 
     (root / "web").rename(root / "moved")
-    assert removed_applications(db, scan_root(root)) == ["web"]
+    assert removed_applications(db, scan_root(root), ["default"]) == ["web"]
 
 
 # --- catalog embeddings --------------------------------------------------------------------------

@@ -54,8 +54,8 @@ def run_retrieval(
     """Search each question with the full hybrid search and with words only, so the effect of the
     embeddings on finding the evidence is visible. Only questions with expected evidence."""
     k = min(k, MAX_K)
-    hybrid = QueryEngine(conn, root=settings.root, catalogs=settings.catalogs, embedder=embedder)
-    lexical = QueryEngine(conn, root=settings.root, catalogs=settings.catalogs, embedder=None)
+    hybrid = QueryEngine(conn, root=settings.roots(), catalogs=settings.catalogs, embedder=embedder)
+    lexical = QueryEngine(conn, root=settings.roots(), catalogs=settings.catalogs, embedder=None)
     out: dict[str, RetrievalOutcome] = {}
     for question in questions:
         if not question.expect.evidence:

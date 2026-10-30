@@ -40,7 +40,7 @@ def _engine(*, semantic: bool = False) -> Iterator[QueryEngine]:
         with psycopg.connect(settings.db_url, autocommit=True) as conn:
             embedder = build_query_embedder(settings) if semantic else None
             yield QueryEngine(
-                conn, root=settings.root, catalogs=settings.catalogs, embedder=embedder
+                conn, root=settings.roots(), catalogs=settings.catalogs, embedder=embedder
             )
     except QueryError as exc:
         typer.echo(f"{exc.code}: {exc.message}", err=True)

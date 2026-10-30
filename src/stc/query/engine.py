@@ -27,6 +27,7 @@ from stc.query.models import (
     SymbolHit,
 )
 from stc.query.search import QueryEmbedder
+from stc.sources import Roots
 
 
 class OpenAIQueryEmbedder:
@@ -60,7 +61,7 @@ class QueryEngine:
         self,
         conn: psycopg.Connection,
         *,
-        root: Path | None,
+        root: Path | Roots | None,
         catalogs: Path,
         embedder: QueryEmbedder | None = None,
         scope: list[str] | None = None,

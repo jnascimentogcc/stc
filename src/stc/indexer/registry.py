@@ -1,6 +1,7 @@
 """Persists detected applications and their files (IDX-07). Idempotent: syncing an unchanged Root
 changes nothing (XCT-04); files that disappeared are removed (LCY-04)."""
 
+from collections.abc import Collection
 from dataclasses import dataclass, field
 
 import psycopg
@@ -34,16 +35,18 @@ def sync_registry(
     *,
     prune: bool = False,
     partial: bool = False,
+    sources: Collection[str] | None = None,
 ) -> SyncResult:
     """Make the DB reflect `scanned`. Applications missing from the scan are only removed with
     `prune`, so pointing at the wrong folder cannot wipe the knowledge base by accident. With
     `partial` the scan covers only some applications: the others are neither reported as
-    missing nor removed."""
+    missing nor removed. With `sources`, only applications of those sources can be missing (the
+    scan did not look anywhere else)."""
     result = SyncResult()
     with conn.transaction():
-        known = {
-            str(row[1]): int(row[0]) for row in conn.execute("SELECT id, name FROM applications")
-        }
+        known_rows = conn.execute("SELECT id, name, source FROM applications").fetchall()
+        known = {str(row[1]): int(row[0]) for row in known_rows}
+        source_of = {str(row[1]): str(row[2]) for row in known_rows}
         seen: set[str] = set()
         for app in scanned:
             name = app.spec.name
@@ -51,9 +54,15 @@ def sync_registry(
             app_id = known.get(name)
             if app_id is None:
                 row = conn.execute(
-                    "INSERT INTO applications (name, path, detected_by, indexed_version)"
-                    " VALUES (%s, %s, %s, %s) RETURNING id",
-                    (name, app.spec.base.as_posix(), app.spec.detected_by, app.code_version),
+                    "INSERT INTO applications (name, path, detected_by, indexed_version, source)"
+                    " VALUES (%s, %s, %s, %s, %s) RETURNING id",
+                    (
+                        name,
+                        app.spec.base.as_posix(),
+                        app.spec.detected_by,
+                        app.code_version,
+                        app.spec.source,
+                    ),
                 ).fetchone()
                 assert row is not None
                 app_id = int(row[0])
@@ -61,21 +70,24 @@ def sync_registry(
             else:
                 conn.execute(
                     "UPDATE applications SET path = %s, detected_by = %s, indexed_version = %s,"
-                    " updated_at = now() WHERE id = %s AND (path, detected_by,"
-                    " indexed_version) IS DISTINCT FROM (%s, %s, %s)",
+                    " source = %s, updated_at = now() WHERE id = %s AND (path, detected_by,"
+                    " indexed_version, source) IS DISTINCT FROM (%s, %s, %s, %s)",
                     (
                         app.spec.base.as_posix(),
                         app.spec.detected_by,
                         app.code_version,
+                        app.spec.source,
                         app_id,
                         app.spec.base.as_posix(),
                         app.spec.detected_by,
                         app.code_version,
+                        app.spec.source,
                     ),
                 )
             result.applications.append(_sync_files(conn, app_id, app))
 
-        missing = [] if partial else sorted(set(known) - seen)
+        candidates = {n for n in known if sources is None or source_of[n] in sources}
+        missing = [] if partial else sorted(candidates - seen)
         if prune and not partial:
             for name in missing:
                 conn.execute("DELETE FROM applications WHERE id = %s", (known[name],))

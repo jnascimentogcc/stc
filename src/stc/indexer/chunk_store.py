@@ -13,6 +13,7 @@ import psycopg
 
 from stc.indexer.chunking import CHUNKER_VERSION, ChunkedFile, chunk_file
 from stc.indexer.redact import REDACTION_VERSION, redact
+from stc.sources import Roots, as_roots
 
 
 @dataclass
@@ -38,11 +39,12 @@ def chunk_key(content_sha256: str) -> str:
 
 
 def chunk_pending(
-    conn: psycopg.Connection, root: Path, *, application: str | None = None
+    conn: psycopg.Connection, root: Path | Roots, *, application: str | None = None
 ) -> ChunkStats:
     stats = ChunkStats()
+    roots = as_roots(root)
     rows = conn.execute(
-        "SELECT f.id, a.path, f.path, f.language, f.content_sha256"
+        "SELECT f.id, a.path, f.path, f.language, f.content_sha256, a.source"
         " FROM files f JOIN applications a ON a.id = f.application_id"
         " WHERE f.status IN ('indexed', 'unsupported')"
         " AND f.chunked_key IS DISTINCT FROM f.content_sha256 || ':' || %s"
@@ -50,8 +52,9 @@ def chunk_pending(
         " ORDER BY f.id",
         (CHUNK_VERSION, application, application),
     ).fetchall()
-    for file_id, app_path, file_path, language, sha in rows:
-        read = read_verified(root / str(app_path) / str(file_path), str(sha))
+    for file_id, app_path, file_path, language, sha, source in rows:
+        base = roots.get(str(source))
+        read = read_verified(base / str(app_path) / str(file_path), str(sha)) if base else None
         if read is None:
             stats.files_skipped += 1
             continue
