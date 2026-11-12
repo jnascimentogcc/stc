@@ -17,6 +17,7 @@ from pathlib import Path, PurePosixPath
 from typing import Literal
 
 from stc.indexer.exclusions import Exclusions
+from stc.indexer.languages import COBOL_SOURCE_SUFFIXES
 from stc.indexer.rootconfig import ApplicationConfig, RootConfig
 from stc.sources import DEFAULT_SOURCE
 
@@ -48,6 +49,7 @@ def detect_applications(root: Path, config: RootConfig | None = None) -> list[Ap
     config = config or RootConfig()
     exclusions = Exclusions(config.exclude.patterns)
     found = _walk_for_applications(root, exclusions)
+    found.update(_cobol_applications(root, exclusions, found))
     specs = _apply_config(root, found, config)
     return _assign_unique_names(specs)
 
@@ -65,6 +67,38 @@ def _walk_for_applications(
             continue
         dirnames[:] = sorted(d for d in dirnames if exclusions.dir_excluded(rel / d) is None)
     return apps
+
+
+def _cobol_applications(
+    root: Path,
+    exclusions: Exclusions,
+    found: dict[PurePosixPath, tuple[str, ...]],
+) -> dict[PurePosixPath, tuple[str, ...]]:
+    """COBOL has no project marker and its sources are spread over folders (`src/`, `jcl/`,
+    `copybooks/`), so a first-level folder holding COBOL or JCL files is one application. A folder
+    that is, or holds, an application found by a marker is left to that marker; COBOL files
+    directly in the Root belong to no application."""
+    extra: dict[PurePosixPath, tuple[str, ...]] = {}
+    if PurePosixPath(".") in found:  # the Root is one application: everything below is inside it
+        return extra
+    for entry in sorted(p for p in root.iterdir() if p.is_dir() and not p.is_symlink()):
+        top = PurePosixPath(entry.name)
+        if exclusions.dir_excluded(top) is not None:
+            continue
+        if any(path == top or _inside(path, top) for path in found):
+            continue
+        suffixes: set[str] = set()
+        for current, dirnames, filenames in os.walk(entry, followlinks=False):
+            rel = PurePosixPath(Path(current).relative_to(root).as_posix())
+            dirnames[:] = sorted(d for d in dirnames if exclusions.dir_excluded(rel / d) is None)
+            suffixes |= {
+                Path(n).suffix.lower()
+                for n in filenames
+                if Path(n).suffix.lower() in COBOL_SOURCE_SUFFIXES
+            }
+        if suffixes:
+            extra[top] = tuple(f"*{s}" for s in sorted(suffixes))
+    return extra
 
 
 def _app_markers(directory: Path, filenames: list[str]) -> list[str]:

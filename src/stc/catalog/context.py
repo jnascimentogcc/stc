@@ -113,9 +113,15 @@ def build_context(conn: psycopg.Connection, application: str) -> AppContext:
         order="(f.path ~* 'readme') DESC, f.path, c.start_line",
     )  # fmt: skip
     entries = _chunks(conn, app_id, f"f.path ~* '{_ENTRY_POINT}'", 4)
+    mainframe = _mainframe_facts(conn, app_id)
     purpose = SectionContext(
-        _pack(docs + entries),
-        [*_language_facts(conn, app_id), *_directory_facts(conn, app_id), *endpoints[:30]],
+        _pack(docs + entries + _mainframe_chunks(conn, app_id)),
+        [
+            *_language_facts(conn, app_id),
+            *_directory_facts(conn, app_id),
+            *endpoints[:30],
+            *mainframe[:40],
+        ],
     )
     sections = {
         "purpose": purpose,
@@ -125,7 +131,8 @@ def build_context(conn: psycopg.Connection, application: str) -> AppContext:
             _language_facts(conn, app_id),
         ),
         "modules": SectionContext(
-            _pack(entries), [*_directory_facts(conn, app_id), *_symbol_facts(conn, app_id)]
+            _pack(entries),
+            [*_directory_facts(conn, app_id), *_symbol_facts(conn, app_id), *mainframe[:80]],
         ),
         "data_model": SectionContext(
             _pack(
@@ -141,7 +148,12 @@ def build_context(conn: psycopg.Connection, application: str) -> AppContext:
         "configuration": _configuration(conn, app_id),
         "flows": SectionContext(
             _pack(entries + _handler_chunks(conn, app_id)),
-            [*endpoints[:40], *_messaging_facts(conn, app_id), *_relation_facts(conn, app_id)],
+            [
+                *endpoints[:40],
+                *_messaging_facts(conn, app_id),
+                *mainframe[:120],
+                *_relation_facts(conn, app_id),
+            ],
         ),
     }
     return AppContext(app_id, str(row[1]), str(row[2]), row[3], files, sections)
@@ -226,7 +238,8 @@ def _symbol_facts(conn: psycopg.Connection, app_id: int) -> list[str]:
     rows = conn.execute(
         "SELECT f.path, s.kind, s.name, s.start_line FROM symbols s JOIN files f ON f.id = s.file_id"  # noqa: E501
         " WHERE f.application_id = %s AND s.is_definition AND s.kind IN"
-        " ('class', 'interface', 'struct', 'enum', 'trait', 'module', 'type', 'object', 'record')"
+        " ('class', 'interface', 'struct', 'enum', 'trait', 'module', 'type', 'object', 'record',"
+        " 'program', 'job')"
         " ORDER BY f.path, s.start_line LIMIT 150",
         (app_id,),
     ).fetchall()
@@ -241,6 +254,45 @@ def _endpoint_facts(conn: psycopg.Connection, app_id: int) -> list[str]:
         (app_id,),
     ).fetchall()
     return [f"Endpoint {detail} defined at {path}:{line}" for detail, path, line in rows]
+
+
+def _mainframe_facts(conn: psycopg.Connection, app_id: int) -> list[str]:
+    """COBOL, copybook, JCL and DDL signals as facts: what an application defines, calls, shares
+    and reads or writes. A call whose target is only known at run time is said to be unresolved."""
+    rows = conn.execute(
+        "SELECT s.kind, s.role, s.key, s.detail, f.path, s.start_line FROM signals s"
+        " JOIN files f ON f.id = s.file_id WHERE s.application_id = %s"
+        " AND s.kind IN ('program', 'copybook', 'table', 'dataset')"
+        " ORDER BY f.path, s.start_line, s.key",
+        (app_id,),
+    ).fetchall()
+    facts: list[str] = []
+    for kind, role, key, detail, path, line in rows:
+        where = f"at {path}:{line}"
+        if kind == "program" and role == "provides":
+            facts.append(f"Program {key} defined {where}")
+        elif kind == "program" and str(key).startswith("?"):
+            facts.append(f"Unresolved dynamic call {str(key)[1:]} {where}")
+        elif kind == "program":
+            facts.append(f"Calls program {key} {where}")
+        elif kind == "copybook":
+            facts.append(f"{'Copybook' if role == 'provides' else 'Uses copybook'} {key} {where}")
+        elif kind == "table":
+            facts.append(f"Table {key} ({'created' if role == 'provides' else detail}) {where}")
+        else:
+            facts.append(f"Dataset {key} ({'written' if role == 'provides' else 'read'}) {where}")
+    return list(dict.fromkeys(facts))
+
+
+def _mainframe_chunks(conn: psycopg.Connection, app_id: int) -> list[ContextItem]:
+    """The header of each program and job (its banner comments say what it is for), then the
+    paragraphs that decide something: that is where COBOL keeps its business rules."""
+    return _chunks(conn, app_id, "c.kind IN ('program', 'job')", 20) + _chunks(
+        conn,
+        app_id,
+        r"c.kind = 'paragraph' AND c.content ~* '(EVALUATE|\mIF\M|COMPUTE)'",
+        25,
+    )
 
 
 def _messaging_facts(conn: psycopg.Connection, app_id: int) -> list[str]:

@@ -157,6 +157,10 @@ def derive_relations(apps: Sequence[AppRef], signals: Sequence[SignalRow]) -> li
     _messaging(collector, signals)
     _libraries(collector, signals)
     _databases(collector, signals)
+    _link(collector, signals, "program", "calls", "high")
+    _link(collector, signals, "dataset", "batch", "high")
+    _link(collector, signals, "copybook", "copybook", "medium")
+    _link(collector, signals, "table", "table", "medium")
     return collector.drafts()
 
 
@@ -243,6 +247,31 @@ def _databases(collector: _Collector, signals: Sequence[SignalRow]) -> None:
             collector.add(
                 a, b, "shared_database", _Evidence("low" if generic else "medium", first, key)
             )
+
+
+def _link(
+    collector: _Collector,
+    signals: Sequence[SignalRow],
+    kind: str,
+    type_: str,
+    confidence: str,
+) -> None:
+    """Mainframe links: whoever consumes a program, dataset, copybook or table depends on the one
+    application that provides it. Nothing is linked when the consumer provides it itself, when
+    several other applications do (ambiguous), or when the name is only known at run time (`?X`)."""
+    providers: dict[str, set[int]] = defaultdict(set)
+    for s in signals:
+        if s.kind == kind and s.role == "provides":
+            providers[s.key].add(s.application_id)
+    for s in signals:
+        if s.kind != kind or s.role != "consumes" or s.key.startswith("?"):
+            continue
+        owners = providers.get(s.key, set())
+        if s.application_id in owners or len(owners) != 1:
+            continue
+        collector.add(
+            s.application_id, next(iter(owners)), type_, _Evidence(confidence, s, s.detail)
+        )
 
 
 def aliases_to_apps(

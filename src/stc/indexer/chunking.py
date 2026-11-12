@@ -16,7 +16,7 @@ from tree_sitter import Node
 
 from stc.indexer.grammars import get_grammar_parser
 
-CHUNKER_VERSION = 1
+CHUNKER_VERSION = 2  # 2: COBOL, copybooks and JCL have their own chunkers
 MAX_CHUNK_LINES = 120
 MAX_CHUNK_CHARS = 6_000
 
@@ -196,6 +196,14 @@ def chunk_file(path: PurePosixPath, text: str, language: str | None) -> ChunkedF
     lines = text.replace("\r\n", "\n").split("\n")
     if not text.strip():
         return ChunkedFile([], [], parsed=False)
+    if language in ("cobol", "cobol-copybook"):
+        from stc.indexer.cobol_chunking import chunk_cobol  # imports this module: no cycle at load
+
+        return chunk_cobol(path, lines, language)
+    if language == "jcl":
+        from stc.indexer.jcl import chunk_jcl  # imports this module: no cycle at load
+
+        return chunk_jcl(lines)
     grammar = grammar_for(path, language)
     parser = get_grammar_parser(grammar) if grammar else None
     if grammar and parser:

@@ -3,6 +3,7 @@
 import asyncio
 import json
 import re
+import shutil
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -413,3 +414,48 @@ def test_all_catalogs_share_one_event_loop(conn: psycopg.Connection, tmp_path: P
     failed = asyncio.run(_generate_all(conn, llm, plan, Settings(language="English")))
     assert failed == [] and len(loops) == 1
     assert catalog_path(tmp_path / "catalogs", "web").is_file()
+
+
+# --- COBOL ---------------------------------------------------------------------------------------
+
+
+@pytest.fixture
+def cobol_conn(temp_db_url: str, tmp_path: Path):  # type: ignore[no-untyped-def]
+    sample = Path(__file__).parents[1] / "examples" / "cobol-bank-root"
+    root = tmp_path / "cobol-root"
+    for name in ("loans-core", "collections"):
+        shutil.copytree(sample / name, root / name)
+    write(
+        root, "dyn/src/D.cbl", "       PROCEDURE DIVISION.\n       P.\n           CALL WS-PROG.\n"
+    )
+    migrate(temp_db_url)
+    with psycopg.connect(temp_db_url, autocommit=True) as connection:
+        index(connection, root)
+        yield connection
+
+
+def test_context_has_evidence_for_cobol_applications(cobol_conn: psycopg.Connection) -> None:
+    loans = build_context(cobol_conn, "loans-core")
+    facts = [*loans.sections["flows"].facts, *loans.sections["modules"].facts]
+    assert "Program LNELIG defined at src/LNELIG.cbl:2" in facts
+    assert "Calls program LNCALC at src/LNELIG.cbl:47" in facts
+    assert any(f.startswith("Table CONTRACT") and "src/LNBATCH.cbl" in f for f in facts)
+    assert any("Dataset BANK.LOANS.LATE.SORTED (written)" in f for f in facts)
+    purpose = loans.sections["purpose"]
+    notes = {i.note for i in purpose.items}
+    assert "program LNBATCH" in notes and "paragraph 5000-CHK-CMT" in notes  # a rule is evidence
+    assert purpose.items and all(i.path in loans.files for i in purpose.items)
+
+    collections = build_context(cobol_conn, "collections")
+    flows = collections.sections["flows"].facts
+    assert any("Uses copybook LATEREC" in f and "src/COLLDUN.cbl:17" in f for f in flows)
+    assert any(
+        "Dataset BANK.LOANS.LATE.SORTED (read)" in f and "jcl/COLLJOB.jcl:7" in f for f in flows
+    )
+    assert any(f.startswith("Relation collections -> loans-core (batch") for f in flows)
+
+
+def test_unresolved_dynamic_calls_are_shown_not_linked(cobol_conn: psycopg.Connection) -> None:
+    flows = build_context(cobol_conn, "dyn").sections["flows"].facts
+    assert "Unresolved dynamic call WS-PROG at src/D.cbl:3" in flows
+    assert not [f for f in flows if f.startswith("Relation")]
