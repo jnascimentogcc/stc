@@ -95,6 +95,43 @@ def parse_jcl(lines: list[str]) -> list[JclStatement]:
     return _scan(lines)[0]
 
 
+def exec_program(operands: str) -> str | None:
+    """`X` of `EXEC PGM=X` (a procedure call or a referback gives None)."""
+    match = _PGM.search(operands)
+    return match.group(1) if match else None
+
+
+def run_programs(text: str) -> list[str]:
+    """Programs run by `RUN PROGRAM(X)` in the in-stream input of a TSO/DB2 step."""
+    return [m.group(1) for m in _RUN_PROGRAM.finditer(text)]
+
+
+def keyword_operands(operands: str) -> dict[str, str]:
+    """`DSN=A,DISP=(NEW,CATLG)` -> `{"DSN": "A", "DISP": "(NEW,CATLG)"}`: split at the commas that
+    are outside parentheses and quotes, keywords upper-cased, positional operands left out."""
+    pieces: list[str] = []
+    depth, quoted, current = 0, False, ""
+    for char in operands:
+        if char == "'":
+            quoted = not quoted
+        elif not quoted and char == "(":
+            depth += 1
+        elif not quoted and char == ")":
+            depth -= 1
+        if char == "," and depth <= 0 and not quoted:
+            pieces.append(current)
+            current = ""
+        else:
+            current += char
+    pieces.append(current)
+    found: dict[str, str] = {}
+    for piece in pieces:
+        key, equals, value = piece.partition("=")
+        if equals:
+            found.setdefault(key.strip().upper(), value.strip())
+    return found
+
+
 def instream_lines(lines: list[str]) -> list[tuple[int, str]]:
     return _scan(lines)[1]
 
@@ -132,13 +169,13 @@ def chunk_jcl(lines: list[str]) -> ChunkedFile:
                     step.name, "step", True, step.first_line, _last_text(lines, first, last), None
                 )
             )
-        if (match := _PGM.search(step.operands)) is not None:
+        if (program := exec_program(step.operands)) is not None:
             symbols.append(
-                SymbolDraft(match.group(1), "call", False, step.first_line, step.last_line, None)
+                SymbolDraft(program, "call", False, step.first_line, step.last_line, None)
             )
     for number, text in instream:
-        for match in _RUN_PROGRAM.finditer(text):
-            symbols.append(SymbolDraft(match.group(1), "call", False, number, number, None))
+        for program in run_programs(text):
+            symbols.append(SymbolDraft(program, "call", False, number, number, None))
     return ChunkedFile(chunks, [_with_chunk(s, chunks) for s in symbols], parsed=True)
 
 
@@ -171,4 +208,12 @@ def _with_chunk(symbol: SymbolDraft, chunks: list[ChunkDraft]) -> SymbolDraft:
     )
 
 
-__all__ = ["JclStatement", "chunk_jcl", "instream_lines", "parse_jcl"]
+__all__ = [
+    "JclStatement",
+    "chunk_jcl",
+    "exec_program",
+    "instream_lines",
+    "keyword_operands",
+    "parse_jcl",
+    "run_programs",
+]
