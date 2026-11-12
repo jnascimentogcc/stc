@@ -150,3 +150,32 @@ def test_files_with_credentials_are_excluded_and_leave_no_signals(
         assert status == ("secret",)  # hygiene excludes the whole file before signals exist
         dump = conn.execute("SELECT string_agg(detail || key, ' ') FROM signals").fetchone()
         assert dump is not None and "hunter2pw" not in dump[0] and "svc:" not in dump[0]
+
+
+def test_mainframe_relations_are_derived_and_idempotent(temp_db_url: str, tmp_path: Path) -> None:
+    migrate(temp_db_url)
+    write(tmp_path, "loans/src/LNCALC.cbl", "       PROGRAM-ID. LNCALC.\n")
+    write(
+        tmp_path,
+        "loans/jcl/NIGHT.jcl",
+        "//N1 JOB\n//S1 EXEC PGM=LNCALC\n//O DD DSN=BANK.D,DISP=(NEW,CATLG)\n",
+    )
+    write(
+        tmp_path,
+        "coll/src/COLLX.cbl",
+        "       PROGRAM-ID. COLLX.\n       PROCEDURE DIVISION.\n       MAIN-PARA.\n"
+        "           CALL 'LNCALC' USING X.\n",
+    )
+    write(
+        tmp_path, "coll/jcl/DAY.jcl", "//K1 JOB\n//S1 EXEC PGM=COLLX\n//I DD DSN=BANK.D,DISP=SHR\n"
+    )
+    with psycopg.connect(temp_db_url) as conn:
+        signals, relations = run(conn, tmp_path)
+        assert signals.signals > 0
+        found = {(s, t, ty): (c, e) for s, t, ty, c, _d, e, _n in list_relations(conn)}
+        assert found[("coll", "loans", "calls")] == ("high", "coll/src/COLLX.cbl:4-4")
+        assert found[("coll", "loans", "batch")] == ("high", "coll/jcl/DAY.jcl:3-3")
+        assert relations.added == 2
+        again_signals, again = run(conn, tmp_path)
+        assert again_signals.files_extracted == 0  # XCT-04
+        assert (again.added, again.updated, again.removed) == (0, 0, 0)
