@@ -253,6 +253,11 @@ uv run stc evaluate --mode all
 Run it again after changing chunking, embeddings, prompts or models: it compares with the
 previous run and lists the questions that started failing or passing.
 
+Got COBOL? `examples/cobol-bank-root/` is a fictional bank (two applications with programs,
+copybooks, DB2 and JCL) with 19 business-rule questions in `evaluation/cobol-bank-questions.yaml`.
+Run the same steps against it with `--root examples/cobol-bank-root` and
+`stc evaluate --questions evaluation/cobol-bank-questions.yaml`, preferably in a separate database.
+
 ## 15. Keep it up to date
 
 After you change code in the Root, see what the system thinks needs doing:

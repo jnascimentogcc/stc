@@ -1,8 +1,0 @@
-# COBOL applications have no project marker STC recognizes yet (pom.xml, package.json, ...),
-# so each one is declared here.
-
-[[application]]
-path = "loans-core"
-
-[[application]]
-path = "collections"

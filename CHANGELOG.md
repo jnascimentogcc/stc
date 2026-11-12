@@ -4,6 +4,16 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Added
+
+- **COBOL, copybook and JCL support**: applications are detected from folders that hold `.cbl`/`.cob`/`.cobol`/`.jcl` files; programs are chunked per section and paragraph, copybooks per `01` record and JCL per job and step, each with symbols; signals for called programs, copybooks, DB2 tables and datasets become the relations `calls`, `batch`, `copybook` and `table`; catalogs get them as verified evidence. A fictional bank sample (`examples/cobol-bank-root/`) and 19 reference questions (`evaluation/cobol-bank-questions.yaml`) come with it.
+
+### Notes
+
+- Migration 0010 widens the signal kinds: run `stc migrate-db`, then `stc index` re-chunks and re-reads files.
+- COBOL is read line by line, not with tree-sitter; an EBCDIC file is not decoded or reported, it degrades to text.
+- Search recall on COBOL is measured per paragraph. On the sample, recall@5 is 0.58 and MRR 0.42 (hybrid); answers pass 19 of 19.
+
 ## [0.2.0] - 2026-10-30
 
 Applications no longer have to live in one local folder.
