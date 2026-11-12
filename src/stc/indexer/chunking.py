@@ -200,6 +200,10 @@ def chunk_file(path: PurePosixPath, text: str, language: str | None) -> ChunkedF
         from stc.indexer.cobol_chunking import chunk_cobol  # imports this module: no cycle at load
 
         return chunk_cobol(path, lines, language)
+    if language == "jcl":
+        from stc.indexer.jcl import chunk_jcl  # imports this module: no cycle at load
+
+        return chunk_jcl(lines)
     grammar = grammar_for(path, language)
     parser = get_grammar_parser(grammar) if grammar else None
     if grammar and parser:
