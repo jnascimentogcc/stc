@@ -50,6 +50,31 @@ While it works, the chat shows the steps it takes over the query engine; the sco
   <img alt="The scope (all or selected applications) and answer style options of a new conversation." src="docs/images/chat-scope-light.png">
 </picture>
 
+### Searching COBOL programs
+
+STC also reads COBOL, copybooks and JCL (no documentation needed). The screenshots below use the fictional bank in `examples/cobol-bank-root/` (a loans application and a collections application, with a nightly batch job, copybooks and DB2 tables). Business-rule questions can be answered in business language, with every citation checked against the indexed code.
+
+A functional question: the answer finds the rate table (a copybook) and the program that reads it, and says what the code does not establish.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/cobol-business-rule-dark.png">
+  <img alt="The chat answers whether a customer with a credit score of 350 can get a mortgage, citing the rate program, the rate table copybook and the eligibility paragraph." src="docs/images/cobol-business-rule-light.png">
+</picture>
+
+Relations between applications come from the code, not from guesses: the collections application depends on the loans application through a dataset written by one JCL job and read by another, and through a shared copybook.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/cobol-dependencies-dark.png">
+  <img alt="The chat explains that collections depends on loans-core through a batch dataset and a shared copybook, citing the JCL members and the COBOL programs." src="docs/images/cobol-dependencies-light.png">
+</picture>
+
+Clicking a citation opens the cited COBOL lines, with the code version they were indexed from.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/cobol-cited-code-dark.png">
+  <img alt="The chat answers which charges apply to a late installment and shows the cited COBOL lines of the nightly batch program." src="docs/images/cobol-cited-code-light.png">
+</picture>
+
 ## Stack
 
 Python 3.12+ (FastAPI, Typer CLI), PostgreSQL 17 + pgvector, tree-sitter, an MCP server, and an Angular + Tailwind + SpartanNG chat UI, shipped with Docker Compose. See [docs/tech-stack.md](docs/tech-stack.md).

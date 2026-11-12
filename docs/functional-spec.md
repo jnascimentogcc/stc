@@ -36,7 +36,7 @@ Chat and MCP are clients of the same engine; they do not duplicate search logic.
 | IDX-01 | Take the path of a Root as input and traverse it recursively. More than one folder can be declared as *sources* (`sources.toml`): local folders, or the repositories of a GitHub organization or user, cloned read-only and shallow by `stc sync`. Every application remembers the source it came from, and each source keeps its own `stc.toml`. |
 | IDX-02 | Automatically detect the applications inside the Root based on project markers (manifests, build files, solution files, etc.), regardless of language. |
 | IDX-03 | Let the user correct the detection: include, exclude, merge or split applications, and give them a name. |
-| IDX-04 | Support applications in multiple languages and technologies; files in unsupported languages are handled as text and flagged. |
+| IDX-04 | Support applications in multiple languages and technologies; files in unsupported languages are handled as text and flagged. COBOL, copybooks and JCL are supported (chunked by paragraph and by job step). |
 | IDX-05 | By default, ignore third-party dependencies, build artifacts, binaries, generated files and lockfiles, with a configurable exclusion list. |
 | IDX-06 | Detect and exclude secrets (credentials, keys, tokens, environment files) before any processing; report what was excluded without exposing the value. |
 | IDX-07 | Record per file: application, path, language, size, status and content identifier. |
@@ -53,7 +53,7 @@ Chat and MCP are clients of the same engine; they do not duplicate search logic.
 | CAT-04 | Catalogs are stored in a human-readable, human-editable and versionable format. |
 | CAT-05 | Manual corrections to a catalog are preserved in future regenerations and take precedence over generated content. |
 | CAT-06 | Generate the global map: list of applications, relationships between applications (who calls/depends on whom), shared databases and services, common technologies, and applications with no relationships. |
-| CAT-07 | Detect relationships between applications from evidence (endpoint calls, messaging, shared databases, common internal libraries, configuration). |
+| CAT-07 | Detect relationships between applications from evidence (endpoint calls, messaging, shared databases, common internal libraries, configuration; for COBOL and JCL: called programs, shared copybooks, DB2 tables and datasets passed between jobs). |
 | CAT-08 | Allow a functional/business description per application, in non-technical language. |
 
 ### 4.3 Indexer — lifecycle

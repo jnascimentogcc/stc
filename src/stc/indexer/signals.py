@@ -12,11 +12,13 @@ import re
 from pathlib import PurePosixPath
 from urllib.parse import urlsplit
 
+from stc.indexer.mainframe_signals import MAINFRAME_LANGUAGES, mainframe_signals
 from stc.indexer.manifests import is_manifest, manifest_signals
 from stc.indexer.signal_types import Signal
 
 EXTRACTOR_VERSION = (
-    3  # 3: routes with a TS generic or the path on the next line; 2: Spring ${property}, no tests
+    4  # 4: COBOL, copybook, JCL and DDL signals; 3: routes with a TS generic or the path on the
+    # next line; 2: Spring ${property}, no tests
 )
 MAX_LINE = 2_000  # longer lines (minified code) are cut before matching
 
@@ -38,7 +40,7 @@ _GENERIC_PATHS = frozenset(
 
 
 def wanted(path: PurePosixPath, language: str | None) -> bool:
-    return is_manifest(path) or (language in SIGNAL_LANGUAGES)
+    return is_manifest(path) or language in SIGNAL_LANGUAGES or language in MAINFRAME_LANGUAGES
 
 
 def is_generic_path(path: str) -> bool:
@@ -113,6 +115,8 @@ def is_test_path(path: PurePosixPath) -> bool:
 def extract_signals(path: PurePosixPath, text: str, language: str | None) -> list[Signal]:
     if is_manifest(path):
         return manifest_signals(path, text)
+    if language in MAINFRAME_LANGUAGES:
+        return [] if is_test_path(path) else _dedupe(mainframe_signals(path, text, language))
     if language not in SIGNAL_LANGUAGES or is_test_path(path):
         return []
     lines = [line[:MAX_LINE] for line in text.replace("\r\n", "\n").split("\n")]

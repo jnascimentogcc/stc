@@ -1,0 +1,195 @@
+# Reference questions for the COBOL sample Root in examples/cobol-bank-root/ (a fictional bank:
+# loans-core grants and charges loans, collections handles late payments). Most questions are
+# about business rules buried in the code; a few are technical (who calls what, shared data).
+#
+#   uv run stc index --root examples/cobol-bank-root
+#   uv run stc evaluate --questions evaluation/cobol-bank-questions.yaml [--mode all]
+#
+# The expected answers are written next to each question so a human can judge the chat too.
+version: 1
+
+questions:
+  # ---------------------------------------------------------------- business rules: granting
+  - id: payroll-income-commitment
+    # 35% of the monthly income for payroll loans (PY); 30% for every other product.
+    question: What is the maximum share of the monthly income that a payroll loan installment can take?
+    profile: functional
+    expect:
+      evidence:
+        - {application: loans-core, file: src/LNELIG.cbl, lines: [50, 60]}
+      contains: ["35"]
+
+  - id: minimum-income
+    # 1,500.00 per month.
+    question: What is the minimum monthly income required to get a loan?
+    profile: functional
+    expect:
+      evidence:
+        - {application: loans-core, file: src/LNELIG.cbl, lines: [33, 36]}
+      contains_any: ["1500", "1,500"]
+
+  - id: age-limits
+    # At least 18 years old, and at most 80 at the end of the term (term rounded up to years).
+    question: What are the age limits for a customer to get a loan?
+    profile: functional
+    expect:
+      evidence:
+        - {application: loans-core, file: src/LNELIG.cbl, lines: [28, 32]}
+      contains: ["18", "80"]
+
+  - id: score-rejection
+    # A credit score below 300 is refused.
+    question: Below which credit score is a loan application refused?
+    profile: functional
+    expect:
+      evidence:
+        - {application: loans-core, file: src/LNELIG.cbl, lines: [37, 40]}
+      contains: ["300"]
+
+  - id: personal-loan-rate-score-650
+    # Score 650 is band 2 (600-799); personal loans (PL) in band 2 pay 2.49% a month.
+    # The rate is only readable by decoding the packed table in the RATETAB copybook.
+    question: What monthly interest rate does a personal loan get for a customer with a credit score of 650?
+    profile: functional
+    expect:
+      evidence:
+        - {application: loans-core, file: copybooks/RATETAB.cpy, lines: [4, 10]}
+        - {application: loans-core, file: src/LNRATE.cbl, lines: [16, 26]}
+      contains: ["2.49"]
+
+  - id: payroll-rate-cap
+    # Yes: payroll loans never pay more than 1.80% a month (band 4 would be 1.99%).
+    question: Is there a ceiling on the monthly interest rate of payroll loans?
+    profile: functional
+    expect:
+      evidence:
+        - {application: loans-core, file: src/LNRATE.cbl, lines: [36, 44]}
+      contains: ["1.8"]
+
+  - id: mortgage-low-score
+    # No: a score of 350 passes the 300 minimum but falls in band 4, where the mortgage rate is
+    # 0000, so LNRATE returns '05' (product not offered).
+    question: Can a customer with a credit score of 350 get a mortgage?
+    profile: functional
+    expect:
+      evidence:
+        - {application: loans-core, file: copybooks/RATETAB.cpy, lines: [10, 10]}
+        - {application: loans-core, file: src/LNRATE.cbl, lines: [36, 38]}
+      contains_any: ["not offered", "no offer", "not available", "cannot", "can't", "not eligible", "no mortgage"]
+
+  - id: iof-calculation
+    # 0.38% of the principal plus 0.0082% per day of the term, counted up to 365 days
+    # (30 days per month). Mortgages (MT) are exempt.
+    question: How is the IOF tax on a loan calculated, and which loans are exempt?
+    profile: functional
+    expect:
+      evidence:
+        - {application: loans-core, file: src/LNCALC.cbl, lines: [27, 38]}
+      contains: ["0.38", "365"]
+      contains_any: ["mortgage", "MT"]
+
+  - id: installment-methods
+    # Price (fixed installment) by default, SAC when the amortization type is 'S'; for SAC only
+    # the first installment is computed.
+    question: Which amortization methods are used to compute the loan installment?
+    profile: functional
+    expect:
+      evidence:
+        - {application: loans-core, file: src/LNCALC.cbl, lines: [10, 26]}
+      contains: ["SAC"]
+      contains_any: ["Price", "PRICE"]
+
+  # ---------------------------------------------------------------- business rules: late payment
+  - id: late-charges
+    # Late interest of 1% a month pro rata per day, plus a 2% fine on the installment.
+    # Payroll loans pay no fine.
+    question: What charges are applied to a late installment?
+    profile: functional
+    expect:
+      evidence:
+        - {application: loans-core, file: src/LNBATCH.cbl, lines: [62, 68]}
+      contains_any: ["2%", "0.02", "2 %"]
+
+  - id: grace-period
+    # Yes: nothing is charged until the installment is more than 3 days late; after that the
+    # late interest counts from the due date.
+    question: Is there a grace period before late charges apply?
+    profile: functional
+    expect:
+      evidence:
+        - {application: loans-core, file: src/LNBATCH.cbl, lines: [53, 61]}
+      contains_any: ["3 days", "three days", "> 3"]
+
+  - id: default-rule
+    # More than 90 days late: the nightly batch sets the contract status to 'D'.
+    question: When does a loan contract go into default?
+    profile: functional
+    expect:
+      evidence:
+        - {application: loans-core, file: src/LNBATCH.cbl, lines: [53, 61]}
+        - {application: loans-core, file: src/LNBATCH.cbl, lines: [78, 88]}
+      contains: ["90"]
+
+  - id: dunning-45-days
+    # 31-60 days late: stage R2, a letter.
+    question: What does collections do with an installment that is 45 days late?
+    profile: functional
+    expect:
+      applications: [collections]
+      evidence:
+        - {application: collections, file: src/COLLDUN.cbl, lines: [48, 60]}
+      contains_any: ["letter", "LETTER"]
+
+  - id: payroll-external-agency
+    # No: after 90 days a payroll loan becomes a payroll deduction request to the employer (PD)
+    # and is never reported to the credit bureau; other loans go to an external agency with a
+    # 10% fee.
+    question: Are overdue payroll loans sent to an external collection agency?
+    profile: functional
+    expect:
+      evidence:
+        - {application: collections, file: src/COLLDUN.cbl, lines: [48, 63]}
+      contains_any: ["employer", "payroll deduction"]
+
+  # ---------------------------------------------------------------- technical
+  - id: callers-of-lncalc
+    # Only LNELIG (CALL 'LNCALC').
+    question: Which programs call LNCALC?
+    expect:
+      evidence:
+        - {application: loans-core, file: src/LNELIG.cbl, lines: [47, 47]}
+      contains: ["LNELIG"]
+
+  - id: contract-table-users
+    # LNBATCH reads CONTRACT (cursor C-LATE) and updates it (status 'D').
+    question: Which programs read or update the CONTRACT table?
+    expect:
+      evidence:
+        - {application: loans-core, file: src/LNBATCH.cbl, lines: [24, 33]}
+      contains: ["LNBATCH"]
+
+  - id: collections-depends-on-loans
+    # collections reads BANK.LOANS.LATE.SORTED, written by loans-core's LNNIGHT job, with the
+    # LATEREC copybook that belongs to loans-core.
+    question: Which applications does collections depend on, and through what?
+    expect:
+      applications: [loans-core]
+      evidence:
+        - {application: collections, file: jcl/COLLJOB.jcl, lines: [7, 7]}
+        - {application: loans-core, file: jcl/LNNIGHT.jcl, lines: [20, 20]}
+      contains_any: ["LATEREC", "BANK.LOANS.LATE.SORTED"]
+
+  - id: nightly-job
+    # Step 1 runs LNBATCH under DB2 (IKJEFT01): late charges, defaults, daily report.
+    # Step 2 sorts the report by days late, descending.
+    question: What does the nightly loans job LNNIGHT do?
+    expect:
+      evidence:
+        - {application: loans-core, file: jcl/LNNIGHT.jcl}
+      contains: ["LNBATCH"]
+
+  # ---------------------------------------------------------------- not in the code
+  - id: early-payoff-discount
+    question: What discount does a customer get for paying off a loan early?
+    kind: unanswerable
+    profile: functional
