@@ -169,3 +169,16 @@ def test_mainframe_files_are_wanted_and_tests_are_skipped() -> None:
 
 def test_extractor_version_was_bumped() -> None:
     assert EXTRACTOR_VERSION == 4
+
+
+def test_a_data_name_starting_with_exec_keeps_the_sql_signals_after_it() -> None:
+    text = (
+        "       PROCEDURE DIVISION.\n"
+        "       P.\n"
+        "           ADD 1 TO EXEC-COUNT.\n"
+        "           EXEC SQL SELECT A INTO :B FROM LOANS END-EXEC.\n"
+        "           EXEC SQL CALL MYPROC END-EXEC.\n"
+    )
+    found = triples(extract_signals(PurePosixPath("a.cbl"), text, "cobol"))
+    assert ("table", "consumes", "LOANS") in found
+    assert not [t for t in found if t[0] == "program"]

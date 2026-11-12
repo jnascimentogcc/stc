@@ -88,3 +88,44 @@ def test_statements_split_at_periods_and_exec_starts_a_new_one() -> None:
     found = statements(read_source(lines))
     assert [(a, b) for a, b, _ in found] == [(1, 2), (3, 3), (4, 4), (6, 6)]
     assert found[3][2] == "DISPLAY 'A. B'."
+
+
+def test_a_long_program_without_periods_is_read_in_linear_time() -> None:
+    import time
+
+    lines = ["       PROCEDURE DIVISION.", "       MAIN-PARA."]
+    lines += ["           ADD 1 TO WS-COUNT" for _ in range(5000)]
+    start = time.perf_counter()
+    read = statements(read_source(lines))
+    assert time.perf_counter() - start < 1.0
+    assert read[-1][1] == len(lines)
+
+
+def test_a_data_name_starting_with_exec_does_not_open_a_block() -> None:
+    lines = [
+        "           ADD 1 TO EXEC-COUNT.",
+        "           EXEC SQL SELECT A INTO :B FROM LOANS END-EXEC.",
+        "           MOVE 1 TO X.",
+    ]
+    found = [text for _, _, text in statements(read_source(lines))]
+    assert found == [
+        "ADD 1 TO EXEC-COUNT.",
+        "EXEC SQL SELECT A INTO :B FROM LOANS END-EXEC.",
+        "MOVE 1 TO X.",
+    ]
+
+
+def test_a_continued_literal_does_not_swallow_the_period() -> None:
+    lines = [
+        "           DISPLAY 'THIS IS A LONG MESSAGE THAT",
+        "      -    'GOES ON'.",
+        "           MOVE A TO B.",
+    ]
+    assert [(f, la) for f, la, _ in statements(read_source(lines))] == [(1, 2), (3, 3)]
+
+
+def test_tab_indented_lines_are_read_by_column() -> None:
+    lines = ["\t COPY CUSTREC.", "\t\tCALL 'SUBPGM'.", "\tSTOP RUN."]
+    source = read_source(lines)
+    assert [s.code for s in source] == ["COPY CUSTREC.", "CALL 'SUBPGM'.", "STOP RUN."]
+    assert not any(s.in_area_a for s in source)

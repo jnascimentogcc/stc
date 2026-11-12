@@ -11,8 +11,8 @@ import re
 from dataclasses import dataclass
 
 _FREE_DIRECTIVE = re.compile(r"^\s*>>\s*SOURCE\s+(?:FORMAT\s+)?(?:IS\s+)?FREE\b", re.IGNORECASE)
-_EXEC = re.compile(r"(?<![\w-])EXEC\b", re.IGNORECASE)  # not the tail of END-EXEC
-_END_EXEC = re.compile(r"(?<![\w-])END-EXEC\b", re.IGNORECASE)
+_EXEC = re.compile(r"(?<![\w-])EXEC(?![\w-])", re.IGNORECASE)  # not END-EXEC, not EXEC-COUNT
+_END_EXEC = re.compile(r"(?<![\w-])END-EXEC(?![\w-])", re.IGNORECASE)
 _FIXED_CODE = slice(7, 72)
 
 
@@ -71,7 +71,7 @@ def _read_free(number: int, line: str) -> SourceLine:
 
 
 def _read_fixed(number: int, line: str) -> SourceLine:
-    raw = line.rstrip("\r\n")
+    raw = line.rstrip("\r\n").expandtabs(8)  # GnuCOBOL's tab stops
     if len(raw) < 7:
         return SourceLine(number, "", False, False, False)
     indicator = raw[6]
@@ -90,26 +90,29 @@ def statements(source: list[SourceLine]) -> list[tuple[int, int, str]]:
     result: list[tuple[int, int, str]] = []
     first = last = 0
     buffer = ""
-    in_exec = False
+    opened = closed = 0  # EXEC and END-EXEC seen in the buffer; lines are masked one by one
 
     def flush() -> None:
-        nonlocal buffer, first, last
+        nonlocal buffer, opened, closed
         if buffer.strip():
             result.append((first, last, buffer.strip()))
         buffer = ""
+        opened = closed = 0
 
     for line in source:
         if line.is_comment or not line.code:
             continue
+        in_exec = opened > closed
         if not in_exec and _EXEC.match(line.code) and buffer:
             flush()
         if not buffer:
             first = line.number
         buffer += ("" if not buffer else " ") + line.code
         last = line.number
-        masked = mask_literals(buffer)
-        in_exec = len(_EXEC.findall(masked)) > len(_END_EXEC.findall(masked))
-        if not in_exec and (_END_EXEC.search(masked) or _ends_with_period(masked)):
+        masked = mask_literals(line.code)  # per line: a continued literal reopens its quote
+        opened += len(_EXEC.findall(masked))
+        closed += len(_END_EXEC.findall(masked))
+        if opened <= closed and (_END_EXEC.search(masked) or _ends_with_period(masked)):
             flush()
     flush()
     return _split_inner_periods(result)

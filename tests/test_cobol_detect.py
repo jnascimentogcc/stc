@@ -66,3 +66,10 @@ def test_stc_toml_can_rename_a_cobol_application(tmp_path: Path) -> None:
     )
     specs = detect_applications(tmp_path, load_root_config(tmp_path))
     assert [s.name for s in specs] == ["loans-core"]
+
+
+def test_a_root_that_is_itself_an_application_leaves_its_cobol_folders_inside_it(
+    tmp_path: Path,
+) -> None:
+    write(tmp_path, "package.json", "cobol/src/A.cbl")
+    assert [s.base.as_posix() for s in detect_applications(tmp_path)] == ["."]

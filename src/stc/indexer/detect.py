@@ -79,6 +79,8 @@ def _cobol_applications(
     that is, or holds, an application found by a marker is left to that marker; COBOL files
     directly in the Root belong to no application."""
     extra: dict[PurePosixPath, tuple[str, ...]] = {}
+    if PurePosixPath(".") in found:  # the Root is one application: everything below is inside it
+        return extra
     for entry in sorted(p for p in root.iterdir() if p.is_dir() and not p.is_symlink()):
         top = PurePosixPath(entry.name)
         if exclusions.dir_excluded(top) is not None:
