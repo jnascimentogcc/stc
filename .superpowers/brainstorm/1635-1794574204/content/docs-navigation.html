@@ -1,0 +1,86 @@
+<h2>Como você navegaria pela documentação?</h2>
+<p class="subtitle">Três estruturas para a tela de documentação do STC (wireframes; o texto usa o banco fictício como exemplo). Em todas, a documentação vem do banco de dados e é exibida como markdown, com diagramas.</p>
+
+<div class="cards">
+
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mock-nav">STC &nbsp;|&nbsp; Chat &nbsp;|&nbsp; <b>Docs</b> &nbsp;|&nbsp; Applications</div>
+      <div style="display:flex;min-height:230px;font-size:12px">
+        <div class="mock-sidebar" style="width:34%;text-align:left">
+          <div class="label">Application</div>
+          <div style="margin:4px 0 10px;padding:4px 6px;border:1px solid #888;border-radius:4px">loans-core ▾</div>
+          <div class="label">README</div>
+          <div style="margin:2px 0 8px">▸ Overview</div>
+          <div class="label">Code docs</div>
+          <div style="margin:2px 0">▸ Architecture</div>
+          <div style="margin:2px 0">▸ Data &amp; tables</div>
+          <div style="margin:2px 0 8px">▸ Guides</div>
+          <div class="label">User docs</div>
+          <div style="margin:2px 0">▸ Product</div>
+          <div style="margin:2px 0">▸ Knowledge base</div>
+        </div>
+        <div class="mock-content" style="text-align:left">
+          <b>Architecture</b>
+          <div class="placeholder" style="margin:8px 0;padding:10px">[ diagram: programs → copybooks → tables ]</div>
+          <div style="opacity:.7">Two programs call LNCALC… <i>LNELIG.cbl:47</i></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A. Uma aplicação por vez</h3>
+      <p>Aba "Docs" ao lado do Chat. Escolhe a aplicação e navega pela árvore das camadas (README, Code docs, User docs).</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mock-nav">STC &nbsp;|&nbsp; Chat &nbsp;|&nbsp; <b>Docs</b> &nbsp;|&nbsp; Applications</div>
+      <div style="padding:10px;font-size:12px;min-height:230px">
+        <b>Documentation</b>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <div style="flex:1;border:1px solid #888;border-radius:6px;padding:8px;text-align:left">
+            <b>loans-core</b>
+            <div style="margin-top:6px">README ✓ &nbsp; Code ✓ &nbsp; User ◐</div>
+            <div style="margin-top:6px;opacity:.7">v e241af3 · up to date</div>
+          </div>
+          <div style="flex:1;border:1px solid #888;border-radius:6px;padding:8px;text-align:left">
+            <b>collections</b>
+            <div style="margin-top:6px">README ✓ &nbsp; Code ◐ &nbsp; User –</div>
+            <div style="margin-top:6px;opacity:.7">⚠ outdated</div>
+          </div>
+        </div>
+        <div style="margin-top:10px;border:1px solid #888;border-radius:6px;padding:8px;text-align:left">
+          <b>System map</b> <span style="opacity:.7">(all applications)</span>
+          <div class="placeholder" style="margin-top:6px;padding:8px">[ diagram: collections → loans-core ]</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B. Painel primeiro</h3>
+      <p>Começa num painel com o estado de cada aplicação (o que foi gerado, o que está desatualizado) e o mapa do sistema; depois entra no documento.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mock-nav">STC &nbsp;|&nbsp; <b>Chat</b> &nbsp;|&nbsp; Docs</div>
+      <div style="display:flex;min-height:230px;font-size:12px">
+        <div class="mock-content" style="text-align:left;flex:1.2">
+          <div style="background:#0002;border-radius:6px;padding:6px;margin-bottom:6px">What charges apply to a late installment?</div>
+          <div style="border:1px solid #888;border-radius:6px;padding:6px">…2% fine, except PY.<br><i>LNBATCH.cbl:62-68</i><br><u>📄 Read: Business rules guide</u></div>
+        </div>
+        <div class="mock-sidebar" style="flex:1;text-align:left;border-left:1px solid #888">
+          <b>Business rules guide</b>
+          <div class="placeholder" style="margin:8px 0;padding:8px">[ flow: nightly batch ]</div>
+          <div style="opacity:.7">Late interest… <i>LNBATCH.cbl:20-88</i></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C. Dentro do chat</h3>
+      <p>Não há aba nova: o documento abre num painel ao lado da conversa, e as respostas do chat apontam para ele.</p>
+    </div>
+  </div>
+
+</div>
