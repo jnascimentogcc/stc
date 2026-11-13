@@ -1,0 +1,278 @@
+<ng-container *transloco="let t">
+  @if (!app()) {
+    <section
+      class="mx-auto px-4 py-6 sm:px-6"
+      style="max-width: var(--content-max)"
+      [attr.aria-label]="t('docs.title')"
+    >
+      <h1 class="text-xl font-semibold">{{ t('docs.title') }}</h1>
+      <p class="mt-1 max-w-2xl text-text-2">{{ t('docs.intro') }}</p>
+      @switch (store.appsState()) {
+        @case ('error') {
+          <p class="mt-4 text-danger" role="alert">{{ store.appsError() }}</p>
+          <button hlmBtn variant="outline" class="mt-2" type="button" (click)="store.loadApps()">
+            {{ t('chat.retry') }}
+          </button>
+        }
+        @case ('ready') {
+          @if (store.apps().length === 0) {
+            <p class="mt-4 text-text-2">{{ t('docs.noApplications') }}</p>
+          } @else {
+            <ul class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              @for (application of store.apps(); track application.name) {
+                <li class="rounded-lg border border-border bg-surface p-4">
+                  <a
+                    class="font-mono font-medium text-primary underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                    [routerLink]="['/docs', application.name]"
+                    >{{ application.name }}</a
+                  >
+                  @if (application.has_docs) {
+                    <p class="mt-1 text-xs text-text-3">
+                      {{ t('docs.pagesCount', { count: application.pages }) }} ·
+                      {{ application.generated_at }}
+                    </p>
+                    <p class="mt-2 flex flex-wrap gap-1.5 text-xs">
+                      <span
+                        class="rounded-md border border-success-border bg-success-bg px-1.5 py-0.5"
+                        >{{ t('docs.status_' + application.status) }}</span
+                      >
+                      @if (application.outdated) {
+                        <span
+                          class="rounded-md border border-warning-border bg-warning-bg px-1.5 py-0.5"
+                          >{{ t('docs.outdatedShort') }}</span
+                        >
+                      }
+                    </p>
+                  } @else {
+                    <p class="mt-1 text-xs text-text-3">{{ t('docs.notGenerated') }}</p>
+                  }
+                </li>
+              }
+            </ul>
+          }
+        }
+        @default {
+          <p class="mt-4 text-text-3" role="status">{{ t('chat.loading') }}</p>
+        }
+      }
+    </section>
+  } @else {
+    <ng-template #navList>
+      <label class="block text-xs font-medium text-text-3" for="docs-app">{{
+        t('docs.application')
+      }}</label>
+      <select
+        id="docs-app"
+        class="mt-1 min-h-9 w-full rounded-md border border-border-2 bg-surface px-2 font-mono text-xs"
+        [value]="app()"
+        (change)="chooseApp($any($event.target).value)"
+      >
+        @for (application of store.apps(); track application.name) {
+          <option [value]="application.name" [selected]="application.name === app()">
+            {{ application.name }}{{ application.has_docs ? '' : ' (' + t('docs.none') + ')' }}
+          </option>
+        }
+        @if (!store.apps().some((a) => a.name === app())) {
+          <option [value]="app()" selected>{{ app() }}</option>
+        }
+      </select>
+      <a class="mt-1 inline-block text-xs text-text-3 underline" [routerLink]="['/docs']">{{
+        t('docs.allApplications')
+      }}</a>
+      @if (store.docs(); as docs) {
+        <label class="mt-4 block text-xs font-medium text-text-3" for="docs-filter">{{
+          t('docs.filterPages')
+        }}</label>
+        <input
+          id="docs-filter"
+          type="search"
+          class="mt-1 min-h-9 w-full rounded-md border border-border-2 bg-surface px-2 text-sm"
+          [value]="filter()"
+          (input)="filter.set($any($event.target).value)"
+        />
+        <ul class="mt-4 space-y-4">
+          @for (group of groups(); track group.name) {
+            <li>
+              <h2 class="px-2 text-xs font-medium uppercase tracking-wide text-text-3">
+                {{ group.name }}
+              </h2>
+              <ul class="mt-1">
+                @for (item of group.pages; track item.path) {
+                  <li>
+                    <a
+                      class="block rounded-md px-2 py-1.5 text-sm hover:bg-accent-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                      [class.bg-accent-soft-2]="item.path === store.page()?.path"
+                      [class.font-medium]="item.path === store.page()?.path"
+                      [routerLink]="['/docs', app()]"
+                      [queryParams]="link(item.path)"
+                      [attr.aria-current]="item.path === store.page()?.path ? 'page' : null"
+                      >{{ item.title }}</a
+                    >
+                  </li>
+                }
+              </ul>
+            </li>
+          } @empty {
+            <li class="px-2 text-sm text-text-3">{{ t('docs.noMatch') }}</li>
+          }
+        </ul>
+        <a hlmBtn variant="outline" size="sm" class="mt-4 w-full" [href]="exportUrl()" download>
+          <ng-icon name="lucideDownload" aria-hidden="true" />
+          {{ t('docs.download') }}
+        </a>
+        <p class="mt-3 text-xs text-text-3">
+          {{ t('docs.generatedWith', { model: docs.model, date: docs.generated_at }) }}
+          @if (docs.code_version) {
+            · {{ t('chat.codeVersion') }}
+            <span class="font-mono">{{ docs.code_version.slice(0, 7) }}</span>
+          }
+        </p>
+      }
+    </ng-template>
+
+    <div
+      class="mx-auto lg:grid lg:grid-cols-[16rem_minmax(0,1fr)] xl:grid-cols-[16rem_minmax(0,1fr)_14rem]"
+      style="max-width: var(--content-max)"
+    >
+      <details class="border-b border-border px-4 py-2 lg:hidden">
+        <summary class="min-h-8 cursor-pointer select-none py-1 font-medium">
+          {{ store.page()?.title ?? app() }} · {{ t('docs.pages') }}
+        </summary>
+        <nav class="pb-3 pt-2" [attr.aria-label]="t('docs.pages')">
+          <ng-container *ngTemplateOutlet="navList" />
+        </nav>
+      </details>
+      <nav
+        class="hidden border-r border-border p-4 lg:sticky lg:block lg:overflow-y-auto"
+        style="top: var(--header-height); height: calc(100dvh - var(--header-height))"
+        [attr.aria-label]="t('docs.pages')"
+      >
+        <ng-container *ngTemplateOutlet="navList" />
+      </nav>
+
+      <article class="min-w-0 px-4 py-6 sm:px-8" [attr.aria-label]="store.page()?.title">
+        @if (store.docs()?.outdated) {
+          <p
+            class="mb-4 flex items-start gap-2 rounded-md border border-warning-border bg-warning-bg p-3 text-sm"
+            role="status"
+          >
+            <ng-icon name="lucideTriangleAlert" class="mt-0.5 text-warning" aria-hidden="true" />
+            <span>{{ t('docs.outdated') }}</span>
+          </p>
+        }
+        @if (store.docs()?.status === 'static') {
+          <p class="mb-4 rounded-md border border-info-border bg-info-bg p-3 text-sm" role="status">
+            {{ t('docs.staticOnly') }}
+          </p>
+        } @else if (store.docs()?.status === 'partial') {
+          <p
+            class="mb-4 rounded-md border border-warning-border bg-warning-bg p-3 text-sm"
+            role="status"
+          >
+            {{ t('docs.partial') }}
+          </p>
+        }
+        @switch (store.docsState()) {
+          @case ('loading') {
+            <p class="text-text-3" role="status">{{ t('chat.loading') }}</p>
+          }
+          @case ('missing') {
+            <h1 class="text-xl font-semibold">{{ app() }}</h1>
+            <p class="mt-2 max-w-xl text-text-2">{{ t('docs.missing') }}</p>
+            <pre
+              class="mt-3 w-fit rounded-md border border-border bg-surface-2 px-3 py-2 font-mono text-sm"
+            >
+stc docs {{ app() }}</pre>
+          }
+          @case ('error') {
+            <p class="text-danger" role="alert">{{ store.docsError() }}</p>
+            <button hlmBtn variant="outline" class="mt-2" type="button" (click)="store.retry()">
+              {{ t('chat.retry') }}
+            </button>
+          }
+          @default {
+            @switch (store.pageState()) {
+              @case ('error') {
+                <p class="text-danger" role="alert">{{ store.pageError() }}</p>
+                <button hlmBtn variant="outline" class="mt-2" type="button" (click)="store.retry()">
+                  {{ t('chat.retry') }}
+                </button>
+              }
+              @case ('loading') {
+                <p class="text-text-3" role="status">{{ t('chat.loading') }}</p>
+              }
+              @default {
+                @if (rendered(); as doc) {
+                  <app-doc-content
+                    [html]="doc.html"
+                    [dark]="theme.isDark()"
+                    (citationOpened)="openCode.set($event)"
+                    (pageOpened)="open($event)"
+                  />
+                  <nav
+                    class="mt-10 flex flex-wrap justify-between gap-3 border-t border-border pt-4"
+                    [attr.aria-label]="t('docs.pageNavigation')"
+                  >
+                    @if (neighbours().previous; as previous) {
+                      <a
+                        class="inline-flex items-center gap-1 text-primary hover:underline"
+                        [routerLink]="['/docs', app()]"
+                        [queryParams]="link(previous.path)"
+                      >
+                        <ng-icon name="lucideChevronLeft" aria-hidden="true" />
+                        <span class="sr-only">{{ t('docs.previous') }}:</span>
+                        {{ previous.title }}
+                      </a>
+                    } @else {
+                      <span></span>
+                    }
+                    @if (neighbours().next; as next) {
+                      <a
+                        class="inline-flex items-center gap-1 text-primary hover:underline"
+                        [routerLink]="['/docs', app()]"
+                        [queryParams]="link(next.path)"
+                      >
+                        <span class="sr-only">{{ t('docs.next') }}:</span>
+                        {{ next.title }}
+                        <ng-icon name="lucideChevronRight" aria-hidden="true" />
+                      </a>
+                    }
+                  </nav>
+                }
+              }
+            }
+          }
+        }
+        @if (openCode(); as citation) {
+          <div class="sticky bottom-3 z-10 mt-6">
+            <app-code-panel [citation]="citation" (closed)="openCode.set(null)" />
+          </div>
+        }
+      </article>
+
+      <aside
+        class="hidden px-4 py-6 xl:sticky xl:block xl:overflow-y-auto"
+        style="top: var(--header-height); height: calc(100dvh - var(--header-height))"
+        [attr.aria-label]="t('docs.onThisPage')"
+      >
+        @if (toc().length > 0) {
+          <h2 class="text-xs font-medium uppercase tracking-wide text-text-3">
+            {{ t('docs.onThisPage') }}
+          </h2>
+          <ul class="mt-2 space-y-1 text-sm">
+            @for (heading of toc(); track heading.id) {
+              <li>
+                <a
+                  class="block rounded-md px-1.5 py-1 text-text-2 hover:bg-accent-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                  [href]="'#' + heading.id"
+                  (click)="$event.preventDefault(); scrollTo(heading.id)"
+                  >{{ heading.text }}</a
+                >
+              </li>
+            }
+          </ul>
+        }
+      </aside>
+    </div>
+  }
+</ng-container>

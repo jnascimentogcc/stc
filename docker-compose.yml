@@ -24,13 +24,15 @@ x-stc: &stc
   environment: &stc-environment
     STC_ROOT: /root-apps
     STC_CATALOGS: /catalogs
+    STC_DOCS: /appdocs
     STC_DATA: /data
     STC_DB_URL: postgresql://stc_app:${STC_APP_PASSWORD:?set STC_APP_PASSWORD in .env}@db:5432/stc
-  # Files written to ./catalogs and ./data belong to you, not to root (set STC_UID/STC_GID on Linux).
+  # Files written to ./catalogs, ./appdocs and ./data belong to you, not to root (set STC_UID/STC_GID on Linux).
   user: "${STC_UID:-1000}:${STC_GID:-1000}"
   volumes:
     - ${STC_ROOT:?set STC_ROOT in .env}:/root-apps:ro
     - ./catalogs:/catalogs
+    - ./appdocs:/appdocs
     - ./data:/data
 
 services:

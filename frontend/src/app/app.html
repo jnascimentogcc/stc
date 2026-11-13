@@ -5,7 +5,25 @@
       style="max-width: var(--content-max)"
     >
       <span class="font-mono font-medium">{{ t('app.name') }}</span>
-      <span class="text-text-3">{{ t('app.tagline') }}</span>
+      <span class="hidden text-text-3 md:inline">{{ t('app.tagline') }}</span>
+      <nav class="ml-2 flex items-center gap-1" [attr.aria-label]="t('app.sections')">
+        <a
+          class="rounded-md px-2.5 py-1.5 text-text-2 hover:bg-accent-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          routerLink="/"
+          [class.bg-accent-soft-2]="section() === 'chat'"
+          [class.font-medium]="section() === 'chat'"
+          [attr.aria-current]="section() === 'chat' ? 'page' : null"
+          >{{ t('nav.chat') }}</a
+        >
+        <a
+          class="rounded-md px-2.5 py-1.5 text-text-2 hover:bg-accent-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          routerLink="/docs"
+          [class.bg-accent-soft-2]="section() === 'docs'"
+          [class.font-medium]="section() === 'docs'"
+          [attr.aria-current]="section() === 'docs' ? 'page' : null"
+          >{{ t('nav.docs') }}</a
+        >
+      </nav>
       <button
         hlmBtn
         variant="ghost"

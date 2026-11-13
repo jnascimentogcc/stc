@@ -25,6 +25,8 @@ Chat and MCP are clients of the same engine; they do not duplicate search logic.
 - **Application**: independent logical unit inside the Root (e.g. service, module, project).
 - **Catalog**: structured document generated per application.
 - **Global map**: cross-cutting view derived from all catalogs.
+- **Documentation**: the full set of navigable pages, with diagrams, that describes one application (section 4.7); richer than the catalog.
+- **Feature**: a capability of an application, detected from an entry point (a batch job, a program nobody calls, a group of endpoints) and documented on its own page.
 - **Evidence**: verifiable reference to the origin of a statement (application, file, line range).
 
 ## 4. Functional requirements
@@ -113,6 +115,26 @@ Chat and MCP are clients of the same engine; they do not duplicate search logic.
 | MCP-06 | Limit response size and paginate, so as not to saturate the client's context. |
 | MCP-07 | Return structured, understandable errors (nonexistent application, indexing in progress, no results). |
 
+### 4.7 Application documentation
+
+The catalog is a short summary meant for lookup. The **documentation** is the full, navigable description of one application: what it does, how it is built, each feature, its data, its interfaces and how it runs, with diagrams. It is written for a person who must understand or take over the application and has nothing else to read.
+
+| ID | Requirement |
+|---|---|
+| DOC-01 | Generate, per application, a **documentation set**: several markdown pages in one folder (not one long file), with an index page that lists all pages and a stable path per page. |
+| DOC-02 | The set contains, at minimum: an overview (what the application is, what it does for the business, stack, key figures), the architecture (components and how they fit), one page **per feature**, the data model, the interfaces (entry points, programs, jobs, endpoints, datasets, topics), the dependencies on other applications, and configuration and operations (settings, how it is run or scheduled). A page whose subject does not exist in the application (for example, no data model) is omitted or says so, never filled with invention. |
+| DOC-03 | **Features are detected by code, not by the model**: entry points (batch jobs, programs nobody calls, endpoint groups, message consumers) are found by static analysis, and each becomes a feature page that lists the code involved (programs, files, tables, datasets). The model only describes what the code of that feature does. Features beyond a configurable limit are listed on the features page as not documented in detail. |
+| DOC-04 | **Diagrams are generated from static analysis, in Mermaid text**, inside the markdown: application context, call graph, per-feature flow with the data it touches, control flow of the entry program, and an entity-relationship diagram. Nodes and edges come from facts (symbols, signals, relations, DDL), never from the model, so a diagram cannot show something the code does not contain. Diagrams that would be too large are truncated and say so. |
+| DOC-05 | Every statement written by the model carries **verified evidence** (application-relative file and line range), with a confidence level and the gaps, like CAT-02 and CAT-03: a statement with no valid citation is discarded and counted as a gap. A part with no relevant evidence is not sent to the model. Tables built from static analysis carry their evidence too. |
+| DOC-06 | The pages are human-editable markdown, versionable, in their own location (`STC_DOCS`, one folder per application). Maintainers' corrections written in marked blocks are **preserved on regeneration and given to the model as authoritative** (as CAT-05); notes of a page that no longer exists are kept in a page of orphaned notes rather than lost. |
+| DOC-07 | Regeneration is **incremental per page**: a page is generated again only when what it is built from changed (the code it cites, the relations, the corrections, the model, the language, the documentation schema version). `--force` regenerates everything, `--dry-run` shows what would be sent with a cost estimate, and a failure in one page or application does not stop the others (LCY-06, LCY-07). |
+| DOC-08 | The documentation records the code version, date, model and language it was generated with, and is flagged as **outdated** when the application was indexed from a newer version (LCY-08, CHT-11). |
+| DOC-09 | Secrets and excluded files are never read, sent or cited (XCT-01); the documentation is written in the configured language (XCT-07). |
+| DOC-10 | The documentation can be generated **without any model** (static pages only: facts, tables and diagrams, with the narrative parts marked as not generated), so the structure can be checked and used for free. |
+| DOC-11 | **Viewing in the web UI**: choose an application, navigate its pages (grouped navigation, on-page table of contents, links between pages and deep links), read them rendered with sanitized markdown, syntax-highlighted code and **Mermaid diagrams** that follow the light and dark theme, and open the code behind any cited `file:lines` in place. An application without documentation says so and how to generate it; an outdated one shows the warning. |
+| DOC-12 | The documentation can be **downloaded** as one markdown file (all pages, in navigation order). |
+| DOC-13 | The documentation is **read-only through the API** (list, pages of an application, one page, export). Nothing in the UI writes it: corrections are made in the files and take effect on the next generation. |
+
 ## 5. Cross-cutting requirements
 
 | ID | Requirement |
@@ -143,6 +165,9 @@ Chat and MCP are clients of the same engine; they do not duplicate search logic.
 5. A question with no possible answer in the code results in an answer that admits it, without invention.
 6. The same question asked in the chat and through MCP produces equivalent evidence.
 7. No secret present in the code appears in indexes, catalogs or answers.
+8. For an application with batch jobs and COBOL programs, the documentation has a page per job or entry program, each with a diagram of the programs, tables and datasets it touches that matches the code, and every sentence of the narrative cites lines that exist (DOC-03 to DOC-05).
+9. A second generation with no changes calls the model zero times; a change to one program regenerates only the pages that depend on it (DOC-07).
+10. In the web UI, the documentation of an application opens with its diagrams rendered, and clicking a cited `file:lines` shows that code (DOC-11).
 
 ## 8. Open questions
 
@@ -152,3 +177,4 @@ Chat and MCP are clients of the same engine; they do not duplicate search logic.
 4. What is the expected frequency of code changes (this determines how demanding incremental updating must be)?
 5. What are the 20–30 real questions that will form the evaluation set?
 6. Should the chat be able to answer from catalogs alone when the code is not available?
+7. Should the documentation also be searchable by the chat and the MCP server (as the catalogs are)? Not in the first version: it is read in the web UI.

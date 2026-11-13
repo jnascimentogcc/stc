@@ -28,6 +28,7 @@
     "clsx": "^2.1.1",
     "dompurify": "^3.4.17",
     "marked": "^18.1.2",
+    "mermaid": "^11.17.2",
     "rxjs": "~7.8.0",
     "shiki": "^4.5.0",
     "tailwind-merge": "^3.7.0",

@@ -128,3 +128,47 @@ body {
 .markdown th {
   background: var(--surface-2);
 }
+
+/* Documentation pages: diagrams drawn by Mermaid and the provenance note under the title. */
+.doc-content figure.diagram {
+  margin: 1rem 0;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 1rem;
+  text-align: center;
+}
+.doc-content figure.diagram svg {
+  display: inline-block;
+  max-width: 100%;
+  height: auto;
+}
+.doc-content figure.diagram > pre {
+  margin: 0;
+  text-align: left;
+}
+.doc-content .diagram-error {
+  margin-top: 0.5rem;
+  color: var(--danger);
+  font-size: 0.85em;
+  text-align: left;
+}
+.doc-content > div > h1 {
+  font-size: 1.6rem;
+}
+.doc-content > div > h2 {
+  margin-top: 1.75em;
+  padding-bottom: 0.25em;
+  border-bottom: 1px solid var(--border);
+}
+.doc-content > div > h1 + blockquote {
+  font-size: 0.8rem;
+  color: var(--text-3);
+}
+.doc-content h1,
+.doc-content h2,
+.doc-content h3,
+.doc-content h4 {
+  scroll-margin-top: calc(var(--header-height) + 1rem);
+}

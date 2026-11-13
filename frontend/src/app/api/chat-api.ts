@@ -27,7 +27,7 @@ export interface ConversationWithMessages extends Conversation {
 
 const BASE = '/api';
 
-async function failure(response: Response): Promise<ApiError> {
+export async function failure(response: Response): Promise<ApiError> {
   let detail = response.statusText;
   try {
     const body = (await response.json()) as { detail?: unknown };

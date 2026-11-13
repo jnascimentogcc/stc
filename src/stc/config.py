@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     root: Path | None = None
     sources: Path | None = None  # sources.toml with more folders (default: ./sources.toml)
     catalogs: Path = Path("./catalogs")
+    docs: Path = Path("./appdocs")  # the documentation of each application (DOC-06)
     data: Path = Path("./data")
 
     db_url: str | None = None
@@ -35,11 +36,14 @@ class Settings(BaseSettings):
     llm_provider: Literal["openai", "anthropic"] = "openai"
     llm_catalog_model: str | None = None
     llm_chat_model: str | None = None
+    llm_docs_model: str | None = None  # the documentation; falls back to the catalog model
     # Sent as `reasoning_effort` when set. Reasoning models reject tool calls on the Chat
     # Completions API unless it is "none" (the chat needs tools); models that do not know the
     # parameter reject it, so it is not sent by default.
     llm_chat_reasoning_effort: Literal["none", "minimal", "low", "medium", "high"] | None = None
     llm_catalog_reasoning_effort: Literal["none", "minimal", "low", "medium", "high"] | None = None
+    llm_docs_reasoning_effort: Literal["none", "minimal", "low", "medium", "high"] | None = None
+    docs_max_features: int = Field(default=15, ge=1)  # feature pages per application (DOC-03)
 
     embeddings_provider: Literal["openai", "voyage", "local"] = "openai"
     embeddings_model: str | None = None

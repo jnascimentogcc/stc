@@ -56,6 +56,36 @@ export function linkReferences(html: string, citations: Citation[]): string {
   return document.body.innerHTML;
 }
 
+/**
+ * Highlights the fenced code blocks under `root` with Shiki. Built from text nodes, so a token can
+ * never become markup; a language without a grammar is left as plain text.
+ */
+export async function highlightCodeBlocks(
+  root: HTMLElement,
+  highlighter: Highlighter,
+): Promise<void> {
+  for (const code of Array.from(root.querySelectorAll('pre > code'))) {
+    const fence = Array.from(code.classList).find((c) => c.startsWith('language-'));
+    const language = fence ? languageForFence(fence.slice('language-'.length)) : null;
+    const text = code.textContent ?? '';
+    const lines = await highlighter.tokens(text.replace(/\n$/, ''), language);
+    if (!lines || code.textContent !== text) continue;
+    code.replaceChildren(
+      ...lines.flatMap((line, index) => [
+        ...line.map((token) => {
+          const span = document.createElement('span');
+          span.textContent = token.text;
+          if (token.color) span.style.color = token.color;
+          if (token.italic) span.style.fontStyle = 'italic';
+          if (token.bold) span.style.fontWeight = '700';
+          return span;
+        }),
+        document.createTextNode(index < lines.length - 1 ? '\n' : ''),
+      ]),
+    );
+  }
+}
+
 @Component({
   selector: 'app-markdown',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -95,27 +125,7 @@ export class MarkdownComponent {
 
   private async highlightBlocks(): Promise<void> {
     await Promise.resolve(); // let the new HTML reach the DOM first
-    for (const code of Array.from(this.host.nativeElement.querySelectorAll('pre > code'))) {
-      const fence = Array.from(code.classList).find((c) => c.startsWith('language-'));
-      const language = fence ? languageForFence(fence.slice('language-'.length)) : null;
-      const text = code.textContent ?? '';
-      const lines = await this.highlighter.tokens(text.replace(/\n$/, ''), language);
-      if (!lines || code.textContent !== text) continue;
-      // Built from text nodes: a token can never become markup.
-      code.replaceChildren(
-        ...lines.flatMap((line, index) => [
-          ...line.map((token) => {
-            const span = document.createElement('span');
-            span.textContent = token.text;
-            if (token.color) span.style.color = token.color;
-            if (token.italic) span.style.fontStyle = 'italic';
-            if (token.bold) span.style.fontWeight = '700';
-            return span;
-          }),
-          document.createTextNode(index < lines.length - 1 ? '\n' : ''),
-        ]),
-      );
-    }
+    await highlightCodeBlocks(this.host.nativeElement, this.highlighter);
   }
 
   protected onActivate(event: Event): void {

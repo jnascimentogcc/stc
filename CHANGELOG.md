@@ -4,6 +4,11 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Added
+
+- **Application documentation** (`stc docs <application>|--all`, DOC-01..DOC-13): a set of linked markdown pages per application in `STC_DOCS` (overview, architecture, one page per detected feature, data model, interfaces, dependencies, configuration and operations) with Mermaid diagrams. Tables and diagrams come from the index with no model; the narrative is written by the LLM from assembled evidence and every statement is verified against the indexed files. Pages are regenerated only when their inputs change; maintainers' notes between `stc:manual` markers survive. `--static-only` writes the facts without calling a model.
+- **Documentation viewer** in the frontend (`/docs`): navigation by page, outline, Mermaid diagrams, clickable citations that open the cited code, download as one markdown file. Read-only API under `/api/docs`.
+
 ## [0.3.0] - 2026-11-12
 
 COBOL, copybooks and JCL.

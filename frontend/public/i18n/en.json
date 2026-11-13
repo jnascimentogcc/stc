@@ -2,7 +2,8 @@
   "app": {
     "name": "STC",
     "tagline": "Talk is cheap. Show me the code.",
-    "toggleTheme": "Toggle light/dark theme"
+    "toggleTheme": "Toggle light/dark theme",
+    "sections": "Sections"
   },
   "chat": {
     "title": "Chat",
@@ -55,5 +56,39 @@
     "proposeHelp": "It changes nothing until a maintainer approves it. Once approved, the text is kept in that section and used as authoritative when the catalog is regenerated.",
     "proposeApplication": "Application",
     "proposeSection": "Section"
+  },
+  "nav": {
+    "chat": "Chat",
+    "docs": "Documentation"
+  },
+  "docs": {
+    "title": "Documentation",
+    "intro": "The full description of each application, generated from its code: what it does, how it is built, each feature, its data and how it runs, with diagrams. Every statement cites the code it comes from; click a reference to read it.",
+    "noApplications": "No applications are indexed yet. Run stc index first.",
+    "application": "Application",
+    "allApplications": "All applications",
+    "none": "no documentation",
+    "pages": "Pages",
+    "pagesCount": "{{count}} page(s)",
+    "filterPages": "Filter pages",
+    "noMatch": "No page matches.",
+    "download": "Download as markdown",
+    "onThisPage": "On this page",
+    "pageNavigation": "Previous and next page",
+    "previous": "Previous",
+    "next": "Next",
+    "generatedWith": "Generated {{date}} with {{model}}",
+    "status_complete": "Complete",
+    "status_partial": "Incomplete",
+    "status_static": "Facts only",
+    "outdatedShort": "Older than the code",
+    "outdated": "This documentation was generated from an older version of the code than the one indexed now. Run stc docs again to refresh it.",
+    "staticOnly": "Only the parts built from static analysis (tables and diagrams) were generated. The narrative parts are written when stc docs runs with a model.",
+    "partial": "Some parts could not be generated. Run stc docs again to retry them.",
+    "notGenerated": "No documentation yet.",
+    "missing": "This application has no documentation yet. Generate it with:",
+    "diagram": "Diagram",
+    "diagramFailed": "The diagram could not be drawn; its source is shown instead.",
+    "closeCode": "Close the code"
   }
 }

@@ -90,6 +90,7 @@ cp .env.example .env          # set the database URLs, the models and your API k
 uv run stc migrate-db
 uv run stc index --root examples/demo-root
 uv run stc catalog --all
+uv run stc docs --all          # full documentation per application, shown in the chat UI under /docs
 uv run stc ask "which applications call demo-api, and where?"
 ```
 

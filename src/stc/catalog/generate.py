@@ -166,9 +166,21 @@ async def _generate_section(run: _Run, section: str) -> SectionResult:
     messages = build_messages(
         section, ctx, run.language, run.manual.get(section, ""), run.context.name
     )
+    return await complete_claims(run.llm, messages, run.context.files, run.context.name, result)
+
+
+async def complete_claims(
+    llm: LLMClient,
+    messages: list[Message],
+    files: Mapping[str, int],
+    application: str,
+    result: SectionResult,
+) -> SectionResult:
+    """Ask for structured statements, retry once on malformed output, and keep only the ones with
+    verified citations. Shared by the catalog sections and the documentation parts."""
     for attempt in (1, 2):
         try:
-            response = await run.llm.complete(messages, response_schema=SECTION_JSON_SCHEMA)
+            response = await llm.complete(messages, response_schema=SECTION_JSON_SCHEMA)
         except ProviderError as exc:
             result.failed = True
             result.gaps.append(f"Generation failed: {exc}")
@@ -189,7 +201,7 @@ async def _generate_section(run: _Run, section: str) -> SectionResult:
                         "matching the schema."),
             ]  # fmt: skip
             continue
-        kept, dropped = verify_claims(claims, run.context.files, run.context.name)
+        kept, dropped = verify_claims(claims, files, application)
         result.claims, result.gaps = kept, gaps
         if dropped:
             result.gaps.append(

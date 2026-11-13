@@ -23,6 +23,9 @@ from stc.catalog.model import LLM_SECTIONS
 from stc.catalog.store import Prepared, generate_and_store, prepare
 from stc.config import Settings, get_settings
 from stc.db.migrate import MigrationError, migrate
+from stc.docs.store import Prepared as DocsPrepared
+from stc.docs.store import generate_and_store as generate_docs
+from stc.docs.store import prepare as prepare_docs
 from stc.indexer.chunk_store import chunk_pending
 from stc.indexer.confirm import candidates, confirm_relations
 from stc.indexer.confirm import estimate_tokens as estimate_confirm
@@ -904,6 +907,134 @@ def catalog(
     except ProviderError as exc:
         typer.echo(f"Catalog failed: {exc}", err=True)
         raise typer.Exit(code=1) from exc
+    except psycopg.Error as exc:
+        typer.echo(f"Database error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    if failed:
+        typer.echo(f"{len(failed)} application(s) not complete: {', '.join(failed)}", err=True)
+        raise typer.Exit(code=1)
+
+
+async def _docs_all(
+    llm: LLMClient | None, plan: list[DocsPrepared], settings: Settings
+) -> list[str]:
+    """Write every planned documentation set in ONE event loop (see `_generate_all`). Returns the
+    applications that are not complete."""
+    failed: list[str] = []
+    for prepared in plan:
+        name = prepared.plan.application
+        try:
+            outcome = await generate_docs(
+                llm, prepared, language=settings.language, concurrency=settings.concurrency
+            )
+        except ProviderError as exc:
+            typer.echo(f"{name}: failed: {exc}", err=True)
+            failed.append(name)
+            continue
+        typer.echo(
+            f"{name}: wrote {outcome.pages_written} of {outcome.pages_total} page(s) to "
+            f"{outcome.directory} ({outcome.status}): {outcome.claims} statement(s) with verified "
+            f"evidence; {outcome.input_tokens:,} input and {outcome.output_tokens:,} output "
+            "tokens used."
+        )
+        if outcome.failed_parts:
+            typer.echo(
+                f"{name}: parts that failed: {', '.join(outcome.failed_parts)} "
+                "(run again to retry).",
+                err=True,
+            )
+            failed.append(name)
+    return failed
+
+
+@app.command()
+def docs(
+    application: Annotated[
+        str | None, typer.Argument(help="Application name (see `stc detect`).")
+    ] = None,
+    all_applications: Annotated[
+        bool, typer.Option("--all", help="Document every indexed application.")
+    ] = False,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Only show which pages would be written and the cost.")
+    ] = False,
+    force: Annotated[
+        bool,
+        typer.Option("--force", help="Regenerate every page even if its inputs did not change."),
+    ] = False,
+    static_only: Annotated[
+        bool,
+        typer.Option(
+            "--static-only",
+            help="Write only what comes from static analysis (tables, diagrams); no model is "
+            "called and the narrative parts are marked as not generated.",
+        ),
+    ] = False,
+    yes: YesOption = False,
+) -> None:
+    """Generate the documentation of one application (or --all): pages with diagrams (DOC-01)."""
+    if (application is not None) == all_applications:
+        typer.echo("Give an application name or --all (not both).", err=True)
+        raise typer.Exit(code=2)
+    settings = get_settings()
+    if settings.db_url is None:
+        typer.echo("STC_DB_URL is not set.", err=True)
+        raise typer.Exit(code=2)
+    provider = settings.llm_provider
+    model = settings.llm_docs_model or settings.llm_catalog_model or "(not set)"
+    failed: list[str] = []
+    try:
+        with psycopg.connect(settings.db_url, autocommit=True) as conn:
+            known = [str(r[0]) for r in conn.execute("SELECT name FROM applications ORDER BY 1")]
+            if all_applications:
+                names = known
+            else:
+                assert application is not None
+                if application not in known:
+                    typer.echo(
+                        f"Unknown application {application!r}. Indexed applications: "
+                        + (", ".join(known) or "(none; run `stc index`)"),
+                        err=True,
+                    )
+                    raise typer.Exit(code=2)
+                names = [application]
+            plan = []
+            for name in names:
+                prepared = prepare_docs(
+                    conn, name, settings.docs, provider=provider, model=model,
+                    language=settings.language, max_features=settings.docs_max_features,
+                    force=force, static_only=static_only,
+                )  # fmt: skip
+                state = "up to date" if prepared.up_to_date else (
+                    f"{len(prepared.stale)} of {len(prepared.plan.pages)} page(s) to write"
+                    + ("" if static_only else f"; about {prepared.estimate_input_tokens:,} input tokens")  # noqa: E501
+                )  # fmt: skip
+                typer.echo(f"{name}: {state}")
+                if not prepared.up_to_date:
+                    plan.append(prepared)
+            tokens_in = sum(p.estimate_input_tokens for p in plan)
+            tokens_out = sum(p.estimate_output_tokens for p in plan)
+            how = "without a model" if static_only else f"with {provider}/{model}"
+            typer.echo(
+                f"{len(plan)} of {len(names)} documentation set(s) to write {how}; about "
+                f"{tokens_in:,} input and {tokens_out:,} output tokens (rough estimate)."
+            )
+            if dry_run or not plan:
+                return
+            if static_only:
+                failed = asyncio.run(_docs_all(None, plan, settings))
+            else:
+                try:
+                    llm = build_llm_client(settings, "docs")
+                except ProviderError as exc:
+                    typer.echo(f"Cannot write the documentation: {exc}", err=True)
+                    raise typer.Exit(code=1) from exc
+                if tokens_in > CONFIRM_TOKENS and not yes:
+                    typer.confirm("Continue?", abort=True)
+                failed = asyncio.run(closing(_docs_all(llm, plan, settings), llm))
+    except UnknownApplication as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
     except psycopg.Error as exc:
         typer.echo(f"Database error: {exc}", err=True)
         raise typer.Exit(code=1) from exc

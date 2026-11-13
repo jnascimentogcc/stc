@@ -4,6 +4,7 @@ from fastapi import FastAPI
 
 from stc import __version__
 from stc.api.chat import LLMFactory, build_chat_router, default_llm_factory
+from stc.api.docs import build_docs_router
 from stc.config import Settings, get_settings
 from stc.query.search import QueryEmbedder
 
@@ -28,6 +29,7 @@ def create_app(
             embedder_factory,
         )
     )
+    application.include_router(build_docs_router(settings or get_settings()))
     return application
 
 
