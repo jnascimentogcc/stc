@@ -39,6 +39,7 @@ class Page:
     title: str
     group: str  # navigation group
     blocks: list[Block] = field(default_factory=list)
+    plain: bool = False  # written as is: no generated-by banner, no part or notes blocks
 
     @property
     def parts(self) -> list[Part]:

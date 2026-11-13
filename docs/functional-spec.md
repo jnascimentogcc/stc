@@ -148,6 +148,7 @@ Documentation says what a system is; a **specification** says what a person must
 | SPC-05 | The index lists the features in a **migration order computed from the facts, not by the model**: a feature comes after the ones that write the tables or datasets it reads; cycles are flagged. It also lists the data shared by several features and proposes a strategy. |
 | SPC-06 | Specifications are files in `STC_SPECS/<application>/`, incremental per page (same inputs rule as DOC-07, plus the stack), with maintainers' notes preserved between `stc:manual` markers (DOC-08) and `--static-only` / `--dry-run` as in DOC-10. |
 | SPC-07 | The files are the product: they are written to be read by a coding assistant (plain markdown, one feature at a time, citations to read the code). The index says how to use them. |
+| SPC-08 | The specifications work in a **different project** from the one that holds the legacy code: the index and every feature say which application the citations refer to and how to read it (the STC MCP server `read_file`, or a copy of the application folder), and the set includes a `CLAUDE.md` for the new project (target stack, how to read the legacy code, how to work, the migration order). It is plain, with no generated-by banner or note blocks, and is meant to be copied to the root of that project. |
 
 ## 5. Cross-cutting requirements
 

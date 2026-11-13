@@ -49,6 +49,7 @@ _TARGETED = {"spec-data", "spec-interfaces", "spec-design", "spec-acceptance", "
 
 _DATA_LAYOUT = r"(\mPIC\M|\mPICTURE\M|\mCOMP(-[0-9])?\M|\mOCCURS\M|\mREDEFINES\M|\mFD\M)"
 MAX_FACTS = ctx.MAX_FACTS
+PROJECT_PAGE = "CLAUDE.md"
 
 
 def _part(part_id: str, context: SectionContext, stack: str, style: str = "paragraphs") -> Part:
@@ -209,7 +210,8 @@ def _feature_page(
     )
     header = (
         f"{KIND_LABELS[feature.kind]} · entry point `{feature.entry_loc}` · slice {position} of "
-        f"{total} in the [migration order](../index.md) · depends on: {needs}"
+        f"{total} in the [migration order](../index.md) · depends on: {needs} · legacy "
+        f"application `{facts.name}` ([how to read its code](../CLAUDE.md#reading-the-legacy-code))"
     )
     if cyclic:
         header += " · **part of a dependency cycle with other features: migrate them together**"
@@ -269,13 +271,69 @@ def _shared_resources(facts: AppFacts, features: list[Feature]) -> str | None:
     return _table(["Resource", "Written by", "Read by"], rows) if rows else None
 
 
+def _legacy_access(application: str) -> str:
+    return (
+        f"The legacy code is the application `{application}`. Every citation in these "
+        "specifications, such as `src/PROG.cbl:14-33`, is a file path **relative to that "
+        "application** and a line range. The legacy code is read-only: never change it.\n\n"
+        "Read it with one of:\n\n"
+        f"- **The STC MCP server** (preferred; it marks a file that changed after the "
+        f"specification was written): `read_file` with `application` = `{application}`, "
+        "`path` = the file and `start_line`/`end_line` = the range. `search_code`, "
+        "`find_symbol`, `grep_code` and `get_dependencies` answer questions the specification "
+        "leaves open. In Claude Code: `claude mcp add --transport http stc <STC MCP URL> "
+        '--header "Authorization: Bearer <STC_MCP_TOKEN>"` (or `claude mcp add stc -- uv run '
+        "stc serve-mcp` from the STC checkout).\n"
+        f"- **A copy of the application folder** in the project (for example "
+        f"`legacy/{application}/`): the same relative paths then apply.\n\n"
+        "If neither is available, work only from the specification and treat anything it does "
+        "not state as an open question for a person to answer."
+    )
+
+
+def _project_page(application: str, stack: str, rows: list[list[str]]) -> Page:
+    """`CLAUDE.md` for the new project: copy it to its root so the assistant starts informed."""
+    page = Page(PROJECT_PAGE, f"Migration of {application}", "Overview", plain=True)
+    order = "\n".join(f"{r[0]}. `{r[1].split('](')[1].rstrip(')')}`" for r in rows) or "(none)"
+    _extend(
+        page,
+        _static(
+            f"You are rebuilding the legacy application `{application}` in a new technology. "
+            "The specifications in this folder say what it does today, with evidence, and how to "
+            "build it in the target stack. Do not generate code from the legacy language: build "
+            "the behavior the specifications describe."
+        ),
+        _static(_section("Target stack", f"```text\n{stack}\n```")),
+        _static(_section("Reading the legacy code", _legacy_access(application))),
+        _static(
+            _section(
+                "How to work",
+                "- Work on **one feature at a time**, in the order of `index.md`; the "
+                "specification of a feature is `features/<feature>.md`.\n"
+                "- Implement the *Functional requirements* and *Business rules* exactly, with the "
+                "values they state. Turn the *Acceptance scenarios* into automated tests first.\n"
+                "- Follow *Proposed design* and *Implementation plan* unless the target stack or "
+                "the code you already have says otherwise.\n"
+                "- Open the cited legacy code (`file:start-end`) whenever a statement is unclear.\n"
+                "- Statements marked low or medium confidence, *Gaps* and *Risks and open "
+                "questions* need a person's decision: ask, do not guess.\n"
+                "- Never invent behavior the specification and the legacy code do not show.",
+            )
+        ),
+        _static(_section("Features in migration order", order)),
+    )
+    return page
+
+
 _HOW_TO_USE = """\
 Each feature has its own specification in `features/`. Give a coding assistant one of them at a \
 time, in the order below, together with the legacy code it lists under "Legacy code to read": \
 the requirements, rules and acceptance scenarios say what must be true, the proposed design and \
 implementation plan say how to build it in the target stack, and every statement cites the \
 legacy code it comes from as `file:start-end`. Statements marked low confidence, the gaps and \
-the open questions need a person's decision before they are built."""
+the open questions need a person's decision before they are built. `CLAUDE.md` in this folder is \
+a starting point for the new project: copy it to the root of the project that will implement \
+these specifications."""
 
 
 def build_spec_plan(
@@ -321,6 +379,7 @@ def build_spec_plan(
         index,
         _static(_section("Target stack", f"```text\n{stack}\n```")),
         _static(_section("How to use this specification", _HOW_TO_USE)),
+        _static(_section("Reading the legacy code", _legacy_access(facts.name))),
         _static(
             _section(
                 "Features in migration order",
@@ -335,6 +394,7 @@ def build_spec_plan(
         ),
     )
     pages.append(index)
+    pages.append(_project_page(facts.name, stack, rows))
     for n, f in enumerate(ordered, 1):
         pages.append(
             _feature_page(

@@ -68,6 +68,9 @@ def render_page(
     manual: Mapping[str, str],
 ) -> str:
     """`parts` maps a part id to its markdown body (claims, or the not-generated note)."""
+    if page.plain:
+        text = "\n\n".join(b.markdown for b in page.blocks if isinstance(b, Static))
+        return f"# {page.title}\n\n{text}".rstrip() + "\n"
     out = [
         f"# {page.title}",
         "",
