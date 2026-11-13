@@ -15,7 +15,9 @@ _MANUAL = re.compile(
     r"<!-- stc:manual:begin section=(\S+) -->\n?(.*?)\n?<!-- stc:manual:end -->", re.DOTALL
 )
 NOTES = "notes"
-NOT_GENERATED = "_Not generated yet: run `stc docs` with a model configured to write this part._"
+NOT_GENERATED = (
+    "_Not generated yet: run this command again with a model configured to write this part._"
+)
 
 
 @dataclass(frozen=True)

@@ -18,6 +18,7 @@ build/
 /data/
 /catalogs/
 /appdocs/
+/specs/
 
 # Frontend
 node_modules/

@@ -9,6 +9,7 @@ database is only read."""
 import hashlib
 import json
 import os
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -16,7 +17,13 @@ from pathlib import Path
 import psycopg
 
 from stc.catalog.model import SectionResult
-from stc.docs.generate import PART_TASKS, SYSTEM_PROMPT, estimate_tokens, generate_parts
+from stc.docs.generate import (
+    PART_TASKS,
+    SPEC_SYSTEM_PROMPT,
+    SYSTEM_PROMPT,
+    estimate_tokens,
+    generate_parts,
+)
 from stc.docs.model import ORPHANS_PAGE, SCHEMA_VERSION, Page, Part, Plan, Static
 from stc.docs.plan import build_plan
 from stc.docs.render import (
@@ -33,6 +40,7 @@ from stc.indexer.signal_store import SIGNALS_VERSION
 from stc.providers import LLMClient
 
 META_FILE = "_meta.json"
+Planner = Callable[[psycopg.Connection, str, int], Plan]
 STATIC_PROVIDER, STATIC_MODEL = "none", "static"
 
 
@@ -99,11 +107,13 @@ def _page_hash(page: Page, manual: dict[str, str], provider: str, model: str, la
     digest.update(f"{versions}|{writer}|{page.title}|{page.group}\n".encode())
     if page.parts:  # the instructions the model gets are inputs too: a better prompt re-writes
         digest.update(SYSTEM_PROMPT.encode())
+        digest.update(SPEC_SYSTEM_PROMPT.encode())
     for block in page.blocks:
         if isinstance(block, Static):
             digest.update(f"s|{block.markdown}\n".encode())
             continue
         digest.update(f"p|{block.id}|{block.style}|{PART_TASKS[block.id]}\n".encode())
+        digest.update(f"t|{block.instructions}\n".encode())
         digest.update(f"m|{manual.get(page.key(block.id), '')}\n".encode())
         for fact in block.context.facts:
             digest.update(f"f|{fact}\n".encode())
@@ -171,8 +181,9 @@ def prepare(
     max_features: int = 15,
     force: bool = False,
     static_only: bool = False,
+    planner: Planner = build_plan,
 ) -> Prepared:
-    plan = build_plan(conn, application, max_features)
+    plan = planner(conn, application, max_features)
     directory = docs_path(docs_base, application)
     previous = read_meta(directory)
     manual = collect_manual(directory)

@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     sources: Path | None = None  # sources.toml with more folders (default: ./sources.toml)
     catalogs: Path = Path("./catalogs")
     docs: Path = Path("./appdocs")  # the documentation of each application (DOC-06)
+    specs: Path = Path("./specs")  # the migration specifications (SPC-06)
+    spec_stack: Path | None = None  # file describing the target stack (SPC-02)
     data: Path = Path("./data")
 
     db_url: str | None = None
@@ -44,6 +46,7 @@ class Settings(BaseSettings):
     llm_catalog_reasoning_effort: Literal["none", "minimal", "low", "medium", "high"] | None = None
     llm_docs_reasoning_effort: Literal["none", "minimal", "low", "medium", "high"] | None = None
     docs_max_features: int = Field(default=15, ge=1)  # feature pages per application (DOC-03)
+    spec_max_features: int = Field(default=30, ge=1)  # feature specifications (SPC-03)
 
     embeddings_provider: Literal["openai", "voyage", "local"] = "openai"
     embeddings_model: str | None = None

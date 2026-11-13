@@ -11,7 +11,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 
 from stc.docs.ddl import Table
-from stc.docs.facts import _WRITES, AppFacts, Owner
+from stc.docs.facts import WRITES, AppFacts, Owner
 from stc.docs.features import Feature
 
 MAX_NODES = 40
@@ -146,9 +146,9 @@ def _add_data(
     for (program, table), actions in sorted(grouped.items()):
         p = _program_node(flow, facts, program)
         t = flow.node(f"table:{table}", table, "db")
-        if any(a not in _WRITES for a in actions):
+        if any(a not in WRITES for a in actions):
             flow.edge(t, p, "reads", "dotted")
-        if any(a in _WRITES for a in actions):
+        if any(a in WRITES for a in actions):
             flow.edge(p, t, "writes")
     for ds in facts.datasets:
         if ds.owner.kind != "job" or (jobs is not None and ds.owner.name not in jobs):

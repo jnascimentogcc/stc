@@ -91,6 +91,7 @@ uv run stc migrate-db
 uv run stc index --root examples/demo-root
 uv run stc catalog --all
 uv run stc docs --all          # full documentation per application, shown in the chat UI under /docs
+uv run stc spec --all          # one migration SPEC per feature (target stack configurable), for a coding assistant
 uv run stc ask "which applications call demo-api, and where?"
 ```
 

@@ -20,6 +20,7 @@ class Part:
     title: str
     context: SectionContext
     style: Style = "paragraphs"
+    instructions: str = ""  # extra text the writer must follow, e.g. the target stack of a spec
 
 
 @dataclass(frozen=True)

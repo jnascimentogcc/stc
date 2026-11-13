@@ -23,6 +23,7 @@ from stc.catalog.model import LLM_SECTIONS
 from stc.catalog.store import Prepared, generate_and_store, prepare
 from stc.config import Settings, get_settings
 from stc.db.migrate import MigrationError, migrate
+from stc.docs.plan import build_plan
 from stc.docs.store import Prepared as DocsPrepared
 from stc.docs.store import generate_and_store as generate_docs
 from stc.docs.store import prepare as prepare_docs
@@ -53,6 +54,8 @@ from stc.providers import (
 from stc.query.cli import query_app
 from stc.query.models import QueryError
 from stc.sources import GitHubSource, Roots, SourcesError, github_folder, read_sources, sources_file
+from stc.spec.plan import spec_planner
+from stc.spec.stack import StackError, load_stack
 
 app = typer.Typer(no_args_is_help=True, help="STC — Talk is cheap. Show me the code.")
 app.add_typer(query_app, name="query")
@@ -947,6 +950,99 @@ async def _docs_all(
     return failed
 
 
+def _write_sets(
+    application: str | None,
+    all_applications: bool,
+    dry_run: bool,
+    force: bool,
+    static_only: bool,
+    yes: bool,
+    *,
+    stack: Path | None = None,
+    spec: bool = False,
+) -> None:
+    """The shared run of `stc docs` and `stc spec`: one set of pages per application."""
+    if (application is not None) == all_applications:
+        typer.echo("Give an application name or --all (not both).", err=True)
+        raise typer.Exit(code=2)
+    settings = get_settings()
+    label = "specification" if spec else "documentation"
+    planner = None
+    if spec:
+        try:
+            planner = spec_planner(load_stack(stack or settings.spec_stack))
+        except StackError as exc:
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(code=2) from exc
+    if settings.db_url is None:
+        typer.echo("STC_DB_URL is not set.", err=True)
+        raise typer.Exit(code=2)
+    provider = settings.llm_provider
+    model = settings.llm_docs_model or settings.llm_catalog_model or "(not set)"
+    failed: list[str] = []
+    try:
+        with psycopg.connect(settings.db_url, autocommit=True) as conn:
+            known = [str(r[0]) for r in conn.execute("SELECT name FROM applications ORDER BY 1")]
+            if all_applications:
+                names = known
+            else:
+                assert application is not None
+                if application not in known:
+                    typer.echo(
+                        f"Unknown application {application!r}. Indexed applications: "
+                        + (", ".join(known) or "(none; run `stc index`)"),
+                        err=True,
+                    )
+                    raise typer.Exit(code=2)
+                names = [application]
+            plan = []
+            for name in names:
+                prepared = prepare_docs(
+                    conn, name, settings.specs if spec else settings.docs,
+                    provider=provider, model=model, language=settings.language,
+                    max_features=(
+                        settings.spec_max_features if spec else settings.docs_max_features
+                    ),
+                    force=force, static_only=static_only, planner=planner or build_plan,
+                )  # fmt: skip
+                state = "up to date" if prepared.up_to_date else (
+                    f"{len(prepared.stale)} of {len(prepared.plan.pages)} page(s) to write"
+                    + ("" if static_only else f"; about {prepared.estimate_input_tokens:,} input tokens")  # noqa: E501
+                )  # fmt: skip
+                typer.echo(f"{name}: {state}")
+                if not prepared.up_to_date:
+                    plan.append(prepared)
+            tokens_in = sum(p.estimate_input_tokens for p in plan)
+            tokens_out = sum(p.estimate_output_tokens for p in plan)
+            how = "without a model" if static_only else f"with {provider}/{model}"
+            typer.echo(
+                f"{len(plan)} of {len(names)} {label} set(s) to write {how}; about "
+                f"{tokens_in:,} input and {tokens_out:,} output tokens (rough estimate)."
+            )
+            if dry_run or not plan:
+                return
+            if static_only:
+                failed = asyncio.run(_docs_all(None, plan, settings))
+            else:
+                try:
+                    llm = build_llm_client(settings, "docs")
+                except ProviderError as exc:
+                    typer.echo(f"Cannot write the {label}: {exc}", err=True)
+                    raise typer.Exit(code=1) from exc
+                if tokens_in > CONFIRM_TOKENS and not yes:
+                    typer.confirm("Continue?", abort=True)
+                failed = asyncio.run(closing(_docs_all(llm, plan, settings), llm))
+    except UnknownApplication as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+    except psycopg.Error as exc:
+        typer.echo(f"Database error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    if failed:
+        typer.echo(f"{len(failed)} application(s) not complete: {', '.join(failed)}", err=True)
+        raise typer.Exit(code=1)
+
+
 @app.command()
 def docs(
     application: Annotated[
@@ -973,74 +1069,46 @@ def docs(
     yes: YesOption = False,
 ) -> None:
     """Generate the documentation of one application (or --all): pages with diagrams (DOC-01)."""
-    if (application is not None) == all_applications:
-        typer.echo("Give an application name or --all (not both).", err=True)
-        raise typer.Exit(code=2)
-    settings = get_settings()
-    if settings.db_url is None:
-        typer.echo("STC_DB_URL is not set.", err=True)
-        raise typer.Exit(code=2)
-    provider = settings.llm_provider
-    model = settings.llm_docs_model or settings.llm_catalog_model or "(not set)"
-    failed: list[str] = []
-    try:
-        with psycopg.connect(settings.db_url, autocommit=True) as conn:
-            known = [str(r[0]) for r in conn.execute("SELECT name FROM applications ORDER BY 1")]
-            if all_applications:
-                names = known
-            else:
-                assert application is not None
-                if application not in known:
-                    typer.echo(
-                        f"Unknown application {application!r}. Indexed applications: "
-                        + (", ".join(known) or "(none; run `stc index`)"),
-                        err=True,
-                    )
-                    raise typer.Exit(code=2)
-                names = [application]
-            plan = []
-            for name in names:
-                prepared = prepare_docs(
-                    conn, name, settings.docs, provider=provider, model=model,
-                    language=settings.language, max_features=settings.docs_max_features,
-                    force=force, static_only=static_only,
-                )  # fmt: skip
-                state = "up to date" if prepared.up_to_date else (
-                    f"{len(prepared.stale)} of {len(prepared.plan.pages)} page(s) to write"
-                    + ("" if static_only else f"; about {prepared.estimate_input_tokens:,} input tokens")  # noqa: E501
-                )  # fmt: skip
-                typer.echo(f"{name}: {state}")
-                if not prepared.up_to_date:
-                    plan.append(prepared)
-            tokens_in = sum(p.estimate_input_tokens for p in plan)
-            tokens_out = sum(p.estimate_output_tokens for p in plan)
-            how = "without a model" if static_only else f"with {provider}/{model}"
-            typer.echo(
-                f"{len(plan)} of {len(names)} documentation set(s) to write {how}; about "
-                f"{tokens_in:,} input and {tokens_out:,} output tokens (rough estimate)."
-            )
-            if dry_run or not plan:
-                return
-            if static_only:
-                failed = asyncio.run(_docs_all(None, plan, settings))
-            else:
-                try:
-                    llm = build_llm_client(settings, "docs")
-                except ProviderError as exc:
-                    typer.echo(f"Cannot write the documentation: {exc}", err=True)
-                    raise typer.Exit(code=1) from exc
-                if tokens_in > CONFIRM_TOKENS and not yes:
-                    typer.confirm("Continue?", abort=True)
-                failed = asyncio.run(closing(_docs_all(llm, plan, settings), llm))
-    except UnknownApplication as exc:
-        typer.echo(str(exc), err=True)
-        raise typer.Exit(code=2) from exc
-    except psycopg.Error as exc:
-        typer.echo(f"Database error: {exc}", err=True)
-        raise typer.Exit(code=1) from exc
-    if failed:
-        typer.echo(f"{len(failed)} application(s) not complete: {', '.join(failed)}", err=True)
-        raise typer.Exit(code=1)
+    _write_sets(application, all_applications, dry_run, force, static_only, yes)
+
+
+@app.command()
+def spec(
+    application: Annotated[
+        str | None, typer.Argument(help="Application name (see `stc detect`).")
+    ] = None,
+    all_applications: Annotated[
+        bool, typer.Option("--all", help="Specify every indexed application.")
+    ] = False,
+    stack: Annotated[
+        Path | None,
+        typer.Option(
+            "--stack",
+            help="Text file describing the target technology (also STC_SPEC_STACK). "
+            "Default: Java, Spring Boot, JPA, PostgreSQL, asynchronous REST.",
+        ),
+    ] = None,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Only show which pages would be written and the cost.")
+    ] = False,
+    force: Annotated[
+        bool,
+        typer.Option("--force", help="Regenerate every page even if its inputs did not change."),
+    ] = False,
+    static_only: Annotated[
+        bool,
+        typer.Option(
+            "--static-only",
+            help="Write only what comes from static analysis (order, dependencies, tables); no "
+            "model is called and the narrative parts are marked as not generated.",
+        ),
+    ] = False,
+    yes: YesOption = False,
+) -> None:
+    """Generate a migration specification per feature of one application (or --all) (SPC-01)."""
+    _write_sets(
+        application, all_applications, dry_run, force, static_only, yes, stack=stack, spec=True
+    )
 
 
 @app.command(name="map")

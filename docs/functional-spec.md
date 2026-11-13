@@ -135,6 +135,20 @@ The catalog is a short summary meant for lookup. The **documentation** is the fu
 | DOC-12 | The documentation can be **downloaded** as one markdown file (all pages, in navigation order). |
 | DOC-13 | The documentation is **read-only through the API** (list, pages of an application, one page, export). Nothing in the UI writes it: corrections are made in the files and take effect on the next generation. |
 
+### 4.8 Migration specifications
+
+Documentation says what a system is; a **specification** says what a person must rebuild, in another technology, to replace one feature of it. STC does not generate the new code: it produces, per feature, the verified description of the legacy behavior and a plan to rebuild it, for a coding assistant (or a developer) to implement. Applications are read-only and nothing here changes them.
+
+| ID | Requirement |
+|---|---|
+| SPC-01 | Generate, per application, a **specification set**: an index page and **one specification per feature** (the features of DOC-03), in markdown, with a stable path per page. |
+| SPC-02 | The **target stack** is configurable: a text file (`--stack`, `STC_SPEC_STACK`) that describes it freely. A default (Java, Spring Boot, JPA, PostgreSQL, asynchronous REST) is used when none is given. The stack is given to the parts that design for it (data, interfaces, design, acceptance, plan) and is an input of every page: changing it rewrites the specifications. |
+| SPC-03 | Each feature specification has: purpose and scope; functional requirements ("The system must ...") in the order the behavior happens; business rules with the exact values; the legacy flow (diagram); data (fields, sizes, precision, keys) and how it maps to the target; interfaces; a proposed design in the target stack; acceptance scenarios (Given/When/Then); an implementation plan of small testable tasks; risks and open questions; and the legacy code to read. |
+| SPC-04 | Every statement cites the legacy code it comes from (`file:start-end`), verified against the indexed files as in CAT-02; a statement without a valid citation is discarded and counted as a gap. Design and plan statements cite the legacy code they replace. Confidence levels and gaps are shown; what the code does not show (scheduling, volumes, real data, screens) is listed as an open question, never filled in. |
+| SPC-05 | The index lists the features in a **migration order computed from the facts, not by the model**: a feature comes after the ones that write the tables or datasets it reads; cycles are flagged. It also lists the data shared by several features and proposes a strategy. |
+| SPC-06 | Specifications are files in `STC_SPECS/<application>/`, incremental per page (same inputs rule as DOC-07, plus the stack), with maintainers' notes preserved between `stc:manual` markers (DOC-08) and `--static-only` / `--dry-run` as in DOC-10. |
+| SPC-07 | The files are the product: they are written to be read by a coding assistant (plain markdown, one feature at a time, citations to read the code). The index says how to use them. |
+
 ## 5. Cross-cutting requirements
 
 | ID | Requirement |
@@ -168,6 +182,7 @@ The catalog is a short summary meant for lookup. The **documentation** is the fu
 8. For an application with batch jobs and COBOL programs, the documentation has a page per job or entry program, each with a diagram of the programs, tables and datasets it touches that matches the code, and every sentence of the narrative cites lines that exist (DOC-03 to DOC-05).
 9. A second generation with no changes calls the model zero times; a change to one program regenerates only the pages that depend on it (DOC-07).
 10. In the web UI, the documentation of an application opens with its diagrams rendered, and clicking a cited `file:lines` shows that code (DOC-11).
+11. For an application with batch jobs and COBOL programs, `stc spec` writes one specification per feature in an order where what writes a table comes before what reads it, every statement cites the legacy code, and a different target stack rewrites the specifications (SPC-02, SPC-05).
 
 ## 8. Open questions
 

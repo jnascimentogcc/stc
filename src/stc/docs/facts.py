@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 import psycopg
 
 _STATUS = "f.status IN ('indexed', 'unsupported')"
-_WRITES = frozenset({"WRITES", "INSERT", "UPDATE", "DELETE", "MERGE"})
+WRITES = frozenset({"WRITES", "INSERT", "UPDATE", "DELETE", "MERGE"})
 
 
 @dataclass(frozen=True)
@@ -51,7 +51,7 @@ class TableUse:
 
     @property
     def writes(self) -> bool:
-        return self.action in _WRITES
+        return self.action in WRITES
 
 
 @dataclass(frozen=True)
