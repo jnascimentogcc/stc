@@ -9,8 +9,12 @@ indexer stored, so the tables and diagrams built from it cannot contain anything
 import re
 from collections import defaultdict
 from dataclasses import dataclass, field
+from pathlib import PurePosixPath
 
 import psycopg
+
+from stc.docs import units as code_units
+from stc.indexer.signals import is_test_path
 
 _STATUS = "f.status IN ('indexed', 'unsupported')"
 WRITES = frozenset({"WRITES", "INSERT", "UPDATE", "DELETE", "MERGE"})
@@ -136,6 +140,10 @@ class AppFacts:
     ddl_files: list[str] = field(default_factory=list)
     file_of_program: dict[str, str] = field(default_factory=dict)
     file_of_job: dict[str, str] = field(default_factory=dict)
+    # Applications in any other language: functions and methods and the calls between them.
+    graph: code_units.UnitGraph = field(default_factory=code_units.UnitGraph)
+    # `path:line` of an endpoint -> the units that handle it
+    handlers: dict[str, list[str]] = field(default_factory=dict)
 
     @property
     def is_mainframe(self) -> bool:
@@ -230,6 +238,7 @@ def build_facts(conn: psycopg.Connection, app_id: int, name: str) -> AppFacts:
             paragraphs_in[path].append(Span(sname.upper(), kind, int(start), int(end)))
         elif kind == "perform" and not is_def:
             raw_performs.append((path, sname.upper(), int(start)))
+    facts.graph = _load_graph(conn, app_id)
     # A program defined by a signal but not by a symbol (should not happen) is still a program.
     for kind, role, key, _detail, path, line in signals:
         if kind == "program" and role == "provides" and str(key) not in facts.programs:
@@ -295,6 +304,8 @@ def build_facts(conn: psycopg.Connection, app_id: int, name: str) -> AppFacts:
         elif kind == "database" and key not in facts.databases:
             facts.databases.append(key)
 
+    _link_handlers(conn, app_id, facts)
+
     facts.relations = [
         Relation(
             str(other),
@@ -317,6 +328,96 @@ def build_facts(conn: psycopg.Connection, app_id: int, name: str) -> AppFacts:
         )
     ]
     return facts
+
+
+_UNIT_QUERY = (
+    "SELECT f.path, s.name, s.kind, s.is_definition, s.start_line, s.end_line"
+    " FROM symbols s JOIN files f ON f.id = s.file_id"
+    f" WHERE f.application_id = %(app)s AND {_STATUS} AND (s.kind = ANY(%(defs)s)"
+    " OR (s.kind = 'call' AND s.name IN (SELECT d.name FROM symbols d JOIN files g"
+    "  ON g.id = d.file_id WHERE g.application_id = %(app)s AND d.is_definition"
+    "  AND d.kind = ANY(%(callable)s))))"
+    " ORDER BY f.path, s.start_line, s.name"
+)
+
+
+def _load_graph(conn: psycopg.Connection, app_id: int) -> code_units.UnitGraph:
+    rows = conn.execute(
+        _UNIT_QUERY,
+        {
+            "app": app_id,
+            "defs": [*code_units.DEFINITION_KINDS, *sorted(code_units.CONTAINER_KINDS)],
+            "callable": [*code_units.DEFINITION_KINDS, "class"],
+        },
+    ).fetchall()
+    return code_units.build_graph(
+        (
+            code_units.SymbolRow(str(p), str(n), str(k), bool(d), int(a), int(b))
+            for p, n, k, d, a, b in rows
+        ),
+        skip=lambda path: is_test_path(PurePosixPath(path)),
+    )
+
+
+def _call_rows(
+    conn: psycopg.Connection, app_id: int, paths: list[str]
+) -> list[code_units.SymbolRow]:
+    rows = conn.execute(
+        "SELECT f.path, s.name, s.kind, s.is_definition, s.start_line, s.end_line"
+        " FROM symbols s JOIN files f ON f.id = s.file_id"
+        f" WHERE f.application_id = %s AND {_STATUS} AND s.kind = 'call' AND f.path = ANY(%s)",
+        (app_id, paths),
+    ).fetchall()
+    return [
+        code_units.SymbolRow(str(p), str(n), str(k), bool(d), int(a), int(b))
+        for p, n, k, d, a, b in rows
+    ]
+
+
+def _line_texts(
+    conn: psycopg.Connection, app_id: int, paths: list[str]
+) -> dict[str, dict[int, str]]:
+    """The text of the lines of some files, from the stored chunks (no Root needed)."""
+    texts: dict[str, dict[int, str]] = defaultdict(dict)
+    for path, start, content in conn.execute(
+        "SELECT f.path, c.start_line, c.content FROM chunks c JOIN files f ON f.id = c.file_id"
+        f" WHERE f.application_id = %s AND {_STATUS} AND f.path = ANY(%s)",
+        (app_id, paths),
+    ):
+        for offset, line in enumerate(str(content).split("\n")):
+            texts[str(path)][int(start) + offset] = line
+    return texts
+
+
+def _link_handlers(conn: psycopg.Connection, app_id: int, facts: AppFacts) -> None:
+    """Which units handle each endpoint: the one the route names, the one it decorates, or (an
+    anonymous callback) the code that follows the registration."""
+    graph = facts.graph
+    if not graph or not facts.endpoints:
+        return
+    paths = sorted({e.loc.path for e in facts.endpoints})
+    texts = _line_texts(conn, app_id, paths)
+    pending: dict[str, list[int]] = defaultdict(list)
+    for endpoint in facts.endpoints:
+        loc = endpoint.loc
+        lines = texts.get(loc.path, {})
+        text = " ".join(lines.get(n, "") for n in range(loc.line, loc.line + 3))
+        hint = code_units.handler_hint(text)
+        found = code_units.handlers_by_hint(graph, hint) if hint else []
+        if not found:
+            found = code_units.handlers_near(graph, loc.path, loc.line)
+        if found:
+            facts.handlers[str(loc)] = [u.key for u in found]
+        else:
+            pending[loc.path].append(loc.line)
+    if not pending:
+        return
+    calls = _call_rows(conn, app_id, sorted(pending))
+    for path, lines_ in pending.items():
+        made = code_units.with_inline_handlers(graph, path, lines_)
+        code_units.add_inline(graph, [r for r in calls if r.path == path], made.values())
+        for line, unit in made.items():
+            facts.handlers[str(Loc(path, line))] = [unit.key]
 
 
 def _evidence(owner: object, path: object, start: object, end: object) -> str:

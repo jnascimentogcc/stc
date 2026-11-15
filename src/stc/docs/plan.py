@@ -32,6 +32,7 @@ KIND_LABELS = {
     "job": "Batch job",
     "program": "Program",
     "endpoints": "HTTP endpoints",
+    "task": "Command or background job",
     "consumer": "Message consumer",
 }
 
@@ -212,9 +213,20 @@ def _feature_code_table(facts: AppFacts, feature: Feature) -> str | None:
         rows.append(["job", f"`{job}`", f"`{facts.jobs[job]}`"])
     for program in feature.programs:
         rows.append(["program", f"`{program}`", f"`{facts.programs[program]}`"])
-    for path in feature.files:
-        if feature.kind in ("endpoints", "consumer"):
-            rows.append(["file", f"`{path}`", ""])
+    for key in feature.units:
+        unit = facts.graph.units.get(key)
+        if unit is not None and not unit.inline:
+            rows.append(
+                [
+                    "function" if not unit.owner_class else "method",
+                    f"`{unit.label}`",
+                    f"`{unit.loc}`",
+                ]
+            )
+    if not feature.units:
+        for path in feature.files:
+            if feature.kind in ("endpoints", "consumer"):
+                rows.append(["file", f"`{path}`", ""])
     return _table(["Kind", "Name", "Defined at"], rows) if rows else None
 
 

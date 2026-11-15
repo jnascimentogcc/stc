@@ -2,21 +2,24 @@
 
 A feature is what the application does when something starts it: a batch job and the programs its
 steps run, a program that nothing calls (an online transaction, an entry called from another
-application), a group of HTTP endpoints defined in one file, or the consumer of a topic. The code
-each feature involves is found by following the calls, so the model is only asked to describe it.
+application), the HTTP endpoints one controller or one route file handles, a command or background
+job, or the consumer of a topic. The code each feature involves is found by following the calls
+(CALL in COBOL, call sites between functions and methods in the other languages), so the model is
+only asked to describe it.
 """
 
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 
 from stc.docs.facts import AppFacts, Endpoint, Loc, Topic, slugify
+from stc.docs.units import background_entries
 
 
 @dataclass
 class Feature:
     slug: str
     title: str
-    kind: str  # job | program | endpoints | consumer
+    kind: str  # job | program | endpoints | task | consumer
     entry: str  # job or program name, or the file for endpoints
     entry_loc: Loc
     jobs: list[str] = field(default_factory=list)
@@ -24,10 +27,18 @@ class Feature:
     files: list[str] = field(default_factory=list)  # every file the feature involves
     endpoints: list[Endpoint] = field(default_factory=list)
     topics: list[Topic] = field(default_factory=list)
+    units: list[str] = field(default_factory=list)  # functions/methods reached, entries first
+    handlers: dict[str, list[str]] = field(default_factory=dict)  # endpoint -> handler units
 
     @property
     def size(self) -> int:
-        return len(self.files) * 2 + len(self.programs) + len(self.endpoints) + len(self.topics)
+        return (
+            len(self.files) * 2
+            + len(self.programs)
+            + len(self.units)
+            + len(self.endpoints)
+            + len(self.topics)
+        )
 
 
 def _reach(facts: AppFacts, starts: list[str]) -> list[str]:
@@ -51,6 +62,64 @@ def _unique(slug: str, taken: set[str]) -> str:
         candidate, n = f"{slug}-{n}", n + 1
     taken.add(candidate)
     return candidate
+
+
+def _unit_files(facts: AppFacts, units: list[str], extra: list[str]) -> list[str]:
+    paths = [*extra, *(facts.graph.units[k].path for k in units if k in facts.graph.units)]
+    return list(dict.fromkeys(paths))
+
+
+def _endpoint_features(facts: AppFacts) -> list[Feature]:
+    """The endpoints one controller (or, with no class, one route file) handles, and everything
+    their handlers call. Endpoints whose handler is not known are grouped by file, as before."""
+    graph = facts.graph
+    groups: dict[tuple[str, str], list[Endpoint]] = defaultdict(list)
+    for endpoint in facts.endpoints:
+        handlers = [
+            graph.units[k] for k in facts.handlers.get(str(endpoint.loc), []) if k in graph.units
+        ]
+        owner = next((u.owner_class for u in handlers if u.owner_class), None)
+        if owner is not None:
+            groups[(owner, handlers[0].path)].append(endpoint)
+        else:
+            groups[("", endpoint.loc.path)].append(endpoint)
+
+    found: list[Feature] = []
+    for (owner, path), endpoints in sorted(groups.items()):
+        handled = {
+            str(e.loc): facts.handlers[str(e.loc)]
+            for e in endpoints
+            if str(e.loc) in facts.handlers
+        }
+        entries = [k for keys in handled.values() for k in keys]
+        units = graph.reach(entries)
+        route_files = [e.loc.path for e in endpoints]
+        title, entry = (f"Endpoints of {owner}", owner) if owner else (f"Endpoints in {path}", path)
+        found.append(
+            Feature(
+                "", title, "endpoints", entry, endpoints[0].loc,
+                files=_unit_files(facts, units, route_files) or [path],
+                endpoints=endpoints, units=units, handlers=handled,
+            )
+        )  # fmt: skip
+    return found
+
+
+def _task_features(facts: AppFacts, covered: set[str]) -> list[Feature]:
+    """Commands, queued jobs, listeners and scripts: units that nothing calls and that start on
+    their own, found by their name and where they live."""
+    graph = facts.graph
+    found: list[Feature] = []
+    for unit in background_entries(graph, covered):
+        units = graph.reach([unit.key])
+        label = unit.owner_class or unit.label
+        found.append(
+            Feature(
+                "", f"Background task {label}", "task", unit.key, Loc(unit.path, unit.start),
+                files=_unit_files(facts, units, []), units=units,
+            )
+        )  # fmt: skip
+    return found
 
 
 def detect_features(facts: AppFacts, limit: int) -> tuple[list[Feature], list[Feature]]:
@@ -84,16 +153,8 @@ def detect_features(facts: AppFacts, limit: int) -> tuple[list[Feature], list[Fe
             )
         )  # fmt: skip
 
-    by_file: dict[str, list[Endpoint]] = defaultdict(list)
-    for endpoint in facts.endpoints:
-        by_file[endpoint.loc.path].append(endpoint)
-    for path in sorted(by_file):
-        found.append(
-            Feature(
-                "", f"Endpoints in {path}", "endpoints", path, by_file[path][0].loc,
-                files=[path], endpoints=by_file[path],
-            )
-        )  # fmt: skip
+    found += _endpoint_features(facts)
+    found += _task_features(facts, {k for f in found for k in f.units})
 
     topics: dict[str, list[Topic]] = defaultdict(list)
     for topic in facts.topics:

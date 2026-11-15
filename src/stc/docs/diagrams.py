@@ -204,9 +204,25 @@ def feature_diagram(facts: AppFacts, feature: Feature) -> str | None:
                 _program_node(flow, facts, program)
         _add_data(flow, facts, by_step, jobs, programs)
         return _fenced(flow, "components")
-    me = flow.node("@self", feature.entry, "stadium")
+    graph = facts.graph
+    entry = graph.label(feature.entry) if feature.kind == "task" else feature.entry
+    me = flow.node("@self", entry, "stadium")
     for endpoint in feature.endpoints:
-        flow.edge(me, flow.node(f"endpoint:{endpoint.detail}", endpoint.detail, "round"), "")
+        node = flow.node(f"endpoint:{endpoint.detail}", endpoint.detail, "round")
+        flow.edge(me, node, "")
+        for key in feature.handlers.get(str(endpoint.loc), []):
+            if key in graph.units and not graph.units[key].inline:
+                flow.edge(
+                    node, flow.node(f"unit:{key}", graph.units[key].label, "box"), "handled by"
+                )
+    shown = 0
+    for key in feature.units:
+        for call in graph.callees(key):
+            if shown >= 40 or graph.units[call.target].inline:
+                continue
+            a = flow.node(f"unit:{key}", graph.label(key), "box")
+            flow.edge(a, flow.node(f"unit:{call.target}", graph.label(call.target), "box"), "calls")
+            shown += 1
     for topic in feature.topics:
         flow.edge(flow.node(f"topic:{topic.key}", topic.key, "file"), me, "subscribes", "dotted")
     return _fenced(flow, "endpoints")

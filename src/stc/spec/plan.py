@@ -64,11 +64,13 @@ def _part(part_id: str, context: SectionContext, stack: str, style: str = "parag
 
 def feature_io(facts: AppFacts, feature: Feature) -> tuple[set[str], set[str]]:
     """(read, written) resources of a feature: `table X` and `dataset X`."""
-    programs, jobs = set(feature.programs), set(feature.jobs)
+    programs, jobs, units = set(feature.programs), set(feature.jobs), set(feature.units)
     read: set[str] = set()
     written: set[str] = set()
     for use in facts.tables:
-        if use.owner.kind == "program" and use.owner.name in programs:
+        if (use.owner.kind == "program" and use.owner.name in programs) or (
+            use.owner.kind == "unit" and use.owner.name in units
+        ):
             (written if use.writes else read).add(f"table {use.table}")
     for ds in facts.datasets:
         if use_in(ds.owner.kind, ds.owner.name, jobs, programs):
@@ -119,6 +121,7 @@ def _interface_facts(facts: AppFacts, feature: Feature) -> list[str]:
     jobs, programs = set(feature.jobs), set(feature.programs)
     lines = [
         *ctx.call_facts(facts, jobs, programs),
+        *ctx.unit_facts(facts, set(feature.units)),
         *ctx.data_facts(facts, jobs, programs),
     ]
     lines += [f"Endpoint {e.detail} defined at {e.loc}" for e in feature.endpoints]
@@ -128,6 +131,14 @@ def _interface_facts(facts: AppFacts, feature: Feature) -> list[str]:
     }
     called_by -= programs
     lines += [f"Program {name} calls into this feature" for name in sorted(called_by)]
+    units = set(feature.units)
+    outside = {
+        facts.graph.label(c.caller)
+        for key in units
+        for c in facts.graph.callers(key)
+        if c.caller not in units and not facts.graph.units[c.caller].inline
+    }
+    lines += [f"{name} calls into this feature" for name in sorted(outside)]
     for relation in facts.relations:
         arrow = "to" if relation.outgoing else "from"
         lines.append(
@@ -141,7 +152,9 @@ def spec_contexts(
 ) -> dict[str, SectionContext]:
     base = ctx.feature_contexts(conn, app_id, facts, feature)
     mainframe = feature.kind in ("job", "program")
-    headers = ctx._file_chunks(conn, app_id, feature.files, kinds=["program", "job"], limit=12)
+    headers = ctx._file_chunks(
+        conn, app_id, feature.files, kinds=ctx.header_kinds(feature), limit=12
+    )
     tables = sorted({u.table for u in facts.tables if u.owner.name in set(feature.programs)})
     copybooks = [
         facts.copybooks[c.copybook].path
@@ -271,10 +284,18 @@ def _shared_resources(facts: AppFacts, features: list[Feature]) -> str | None:
     return _table(["Resource", "Written by", "Read by"], rows) if rows else None
 
 
-def _legacy_access(application: str) -> str:
+def _example_path(facts: AppFacts) -> str:
+    """A path from the application itself, to show what a citation looks like."""
+    if facts.graph:
+        first = next(iter(facts.graph.units.values()))
+        return f"{first.path}:{first.start}-{first.end}"
+    return "src/PROG.cbl:14-33"
+
+
+def _legacy_access(application: str, example: str = "src/PROG.cbl:14-33") -> str:
     return (
         f"The legacy code is the application `{application}`. Every citation in these "
-        "specifications, such as `src/PROG.cbl:14-33`, is a file path **relative to that "
+        f"specifications, such as `{example}`, is a file path **relative to that "
         "application** and a line range. The legacy code is read-only: never change it.\n\n"
         "Read it with one of:\n\n"
         f"- **The STC MCP server** (preferred; it marks a file that changed after the "
@@ -291,7 +312,9 @@ def _legacy_access(application: str) -> str:
     )
 
 
-def _project_page(application: str, stack: str, rows: list[list[str]]) -> Page:
+def _project_page(
+    application: str, stack: str, rows: list[list[str]], example: str = "src/PROG.cbl:14-33"
+) -> Page:
     """`CLAUDE.md` for the new project: copy it to its root so the assistant starts informed."""
     page = Page(PROJECT_PAGE, f"Migration of {application}", "Overview", plain=True)
     order = "\n".join(f"{r[0]}. `{r[1].split('](')[1].rstrip(')')}`" for r in rows) or "(none)"
@@ -304,7 +327,7 @@ def _project_page(application: str, stack: str, rows: list[list[str]]) -> Page:
             "the behavior the specifications describe."
         ),
         _static(_section("Target stack", f"```text\n{stack}\n```")),
-        _static(_section("Reading the legacy code", _legacy_access(application))),
+        _static(_section("Reading the legacy code", _legacy_access(application, example))),
         _static(
             _section(
                 "How to work",
@@ -379,7 +402,9 @@ def build_spec_plan(
         index,
         _static(_section("Target stack", f"```text\n{stack}\n```")),
         _static(_section("How to use this specification", _HOW_TO_USE)),
-        _static(_section("Reading the legacy code", _legacy_access(facts.name))),
+        _static(
+            _section("Reading the legacy code", _legacy_access(facts.name, _example_path(facts)))
+        ),
         _static(
             _section(
                 "Features in migration order",
@@ -394,7 +419,7 @@ def build_spec_plan(
         ),
     )
     pages.append(index)
-    pages.append(_project_page(facts.name, stack, rows))
+    pages.append(_project_page(facts.name, stack, rows, _example_path(facts)))
     for n, f in enumerate(ordered, 1):
         pages.append(
             _feature_page(

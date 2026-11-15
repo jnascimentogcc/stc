@@ -95,6 +95,20 @@ def call_facts(facts: AppFacts, jobs: set[str] | None, programs: set[str] | None
     return out
 
 
+def unit_facts(facts: AppFacts, units: set[str]) -> list[str]:
+    """Which function or method calls which (an application not written in COBOL)."""
+    graph = facts.graph
+    out: list[str] = []
+    for key in sorted(units, key=lambda k: (graph.units[k].path, graph.units[k].start)):
+        unit = graph.units[key]
+        out.append(f"{unit.label} is defined {_at(Loc(unit.path, unit.start))}")
+        for call in graph.callees(key):
+            out.append(
+                f"{unit.label} calls {graph.label(call.target)} {_at(Loc(call.path, call.line))}"
+            )
+    return out
+
+
 def data_facts(facts: AppFacts, jobs: set[str] | None, programs: set[str] | None) -> list[str]:
     out: list[str] = []
     for use in facts.tables:
@@ -124,12 +138,28 @@ def feature_facts(facts: AppFacts, feature: Feature) -> list[str]:
     jobs, programs = set(feature.jobs), set(feature.programs)
     out = [
         *call_facts(facts, jobs, programs),
+        *unit_facts(facts, set(feature.units)),
         *data_facts(facts, jobs, programs),
         *perform_facts(facts, set(feature.programs[:1])),
     ]
-    out += [f"Endpoint {e.detail} defined {_at(e.loc)}" for e in feature.endpoints]
+    for endpoint in feature.endpoints:
+        handlers = ", ".join(
+            facts.graph.label(k) for k in feature.handlers.get(str(endpoint.loc), [])
+        )
+        by = f" and is handled by {handlers}" if handlers else ""
+        out.append(f"Endpoint {endpoint.detail} is defined {_at(endpoint.loc)}{by}")
     out += [f"Topic {t.key} ({t.role}) {_at(t.loc)}" for t in feature.topics]
     return out[:MAX_FACTS]
+
+
+def header_kinds(feature: Feature) -> list[str]:
+    """The chunks that say what a unit of the feature is: program and job headers in COBOL, the
+    classes, functions and methods in the other languages."""
+    return (
+        ["program", "job"]
+        if feature.kind in ("job", "program")
+        else ["class", "function", "method"]
+    )
 
 
 def feature_contexts(
@@ -139,7 +169,7 @@ def feature_contexts(
     paths = feature.files
     shared = feature_facts(facts, feature)
     mainframe = feature.kind in ("job", "program")
-    headers = _file_chunks(conn, app_id, paths, kinds=["program", "job"], limit=12)
+    headers = _file_chunks(conn, app_id, paths, kinds=header_kinds(feature), limit=12)
     everything = _file_chunks(conn, app_id, paths, limit=120)
     rules = _file_chunks(
         conn, app_id, paths,
