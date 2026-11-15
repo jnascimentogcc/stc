@@ -144,6 +144,8 @@ class AppFacts:
     graph: code_units.UnitGraph = field(default_factory=code_units.UnitGraph)
     # `path:line` of an endpoint -> the units that handle it
     handlers: dict[str, list[str]] = field(default_factory=dict)
+    # table -> the files that define it (DDL, migrations, models)
+    table_files: dict[str, list[str]] = field(default_factory=dict)
 
     @property
     def is_mainframe(self) -> bool:
@@ -266,6 +268,8 @@ def build_facts(conn: psycopg.Connection, app_id: int, name: str) -> AppFacts:
         source = min(enclosing, key=lambda s: s.end - s.start).name if enclosing else None
         facts.performs.append(Perform(program, source, target, Loc(path, line)))
 
+    models: dict[str, tuple[str, str]] = {}  # class -> (table, file that maps it)
+    in_code: list[tuple[str, int, str, str]] = []  # table uses outside COBOL: path, line, ...
     for kind, role, key, detail, path, line in signals:
         path, key, detail, line = str(path), str(key), str(detail), int(line)
         loc = Loc(path, line)
@@ -280,10 +284,16 @@ def build_facts(conn: psycopg.Connection, app_id: int, name: str) -> AppFacts:
             if role == "provides":
                 if path not in facts.ddl_files:
                     facts.ddl_files.append(path)
+                if path not in facts.table_files.setdefault(key, []):
+                    facts.table_files[key].append(path)
+                if detail.startswith("model "):
+                    models[detail.split()[1]] = (key, path)
                 continue
             owner = _owner_of(path, line, programs_in, job_in, steps_in)
             if owner is not None:
                 facts.tables.append(TableUse(owner, key, _label(detail), loc))
+            else:
+                in_code.append((path, line, key, detail))
         elif kind == "dataset":
             owner = _owner_of(path, line, programs_in, job_in, steps_in)
             if owner is not None:
@@ -305,6 +315,7 @@ def build_facts(conn: psycopg.Connection, app_id: int, name: str) -> AppFacts:
             facts.databases.append(key)
 
     _link_handlers(conn, app_id, facts)
+    _unit_table_uses(conn, app_id, facts, models, in_code)
 
     facts.relations = [
         Relation(
@@ -393,7 +404,7 @@ def _link_handlers(conn: psycopg.Connection, app_id: int, facts: AppFacts) -> No
     """Which units handle each endpoint: the one the route names, the one it decorates, or (an
     anonymous callback) the code that follows the registration."""
     graph = facts.graph
-    if not graph or not facts.endpoints:
+    if not facts.endpoints:
         return
     paths = sorted({e.loc.path for e in facts.endpoints})
     texts = _line_texts(conn, app_id, paths)
@@ -418,6 +429,77 @@ def _link_handlers(conn: psycopg.Connection, app_id: int, facts: AppFacts) -> No
         code_units.add_inline(graph, [r for r in calls if r.path == path], made.values())
         for line, unit in made.items():
             facts.handlers[str(Loc(path, line))] = [unit.key]
+
+
+_WRITE_VERB = re.compile(
+    r"\b(?:create|save|insert|update|delete|destroy|upsert|persist|remove|add|merge|bulk_create|"
+    r"bulk_update|firstOrCreate|updateOrCreate|forceDelete|truncate|increment|decrement|"
+    r"fill|sync|attach|detach|flush)\w*\s*\(",
+    re.I,
+)
+_NOT_CODE = re.compile(r"^\s*(?:use|import|from|namespace|package|require|include|#include)\b")
+MAX_MODELS = 300
+
+
+def _model_use(name: str) -> re.Pattern[str]:
+    """A model name used as a class that reaches the table: `Invoice::where`, `Invoice.objects`,
+    `new Invoice`, `Order(...)`, `query(Order)`, `findAll<Invoice>`; not a type hint."""
+    n = re.escape(name)
+    return re.compile(
+        rf"\bnew\s+{n}\b|\b{n}\s*(?:::|\.)\s*(?!class\b)\w|\b{n}\s*\(|\(\s*{n}\s*[,)]|<\s*{n}\s*>"
+    )
+
+
+def _unit_table_uses(
+    conn: psycopg.Connection,
+    app_id: int,
+    facts: AppFacts,
+    models: dict[str, tuple[str, str]],
+    in_code: list[tuple[str, int, str, str]],
+) -> None:
+    """Tables that functions and methods read and write: the SQL in their code, and the models
+    they use (a model maps one table, so using it is using the table)."""
+    graph = facts.graph
+    if not graph:
+        return
+    seen: set[tuple[str, str, str]] = set()
+
+    def add(key: str, table: str, action: str, loc: Loc) -> None:
+        marker = (key, table, action)
+        if marker not in seen:
+            seen.add(marker)
+            facts.tables.append(TableUse(Owner("unit", key), table, action, loc))
+
+    for path, line, table, detail in in_code:
+        unit = graph.enclosing(path, line)
+        if unit is not None:
+            add(unit.key, table, _label(detail), Loc(path, line))
+    names = sorted(models)[:MAX_MODELS]
+    if not names:
+        return
+    uses = {name: _model_use(name) for name in names}
+    rows = conn.execute(
+        "SELECT f.path, c.start_line, c.content FROM chunks c JOIN files f ON f.id = c.file_id"
+        f" WHERE f.application_id = %s AND {_STATUS} AND c.content ~ %s"
+        " ORDER BY f.path, c.start_line",
+        (app_id, r"\m(" + "|".join(re.escape(n) for n in names) + r")\M"),
+    ).fetchall()
+    for path, start, content in rows:
+        lines = str(content).split("\n")
+        for offset, text in enumerate(lines):
+            if _NOT_CODE.match(text):
+                continue
+            number = int(start) + offset
+            unit = graph.enclosing(str(path), number)
+            if unit is None:
+                continue
+            for name in names:
+                table, defined_in = models[name]
+                if str(path) == defined_in or not uses[name].search(text):
+                    continue
+                window = " ".join(lines[offset : offset + 3])
+                action = "WRITES" if _WRITE_VERB.search(window) else "READS"
+                add(unit.key, table, action, Loc(str(path), number))
 
 
 def _evidence(owner: object, path: object, start: object, end: object) -> str:

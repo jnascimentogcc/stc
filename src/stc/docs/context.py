@@ -14,7 +14,7 @@ from stc.catalog.context import (
     _manifest_where,
     _pack,
 )
-from stc.docs.facts import AppFacts, Loc
+from stc.docs.facts import WRITES, AppFacts, Loc
 from stc.docs.features import Feature
 
 _STATUS = "f.status IN ('indexed', 'unsupported')"
@@ -109,12 +109,21 @@ def unit_facts(facts: AppFacts, units: set[str]) -> list[str]:
     return out
 
 
-def data_facts(facts: AppFacts, jobs: set[str] | None, programs: set[str] | None) -> list[str]:
+def data_facts(
+    facts: AppFacts,
+    jobs: set[str] | None,
+    programs: set[str] | None,
+    units: set[str] | None = None,
+) -> list[str]:
     out: list[str] = []
     for use in facts.tables:
         if use.owner.kind == "program" and (programs is None or use.owner.name in programs):
             owner, table = use.owner.name, use.table
             out.append(f"Program {owner} does SQL {use.action} on table {table} {_at(use.loc)}")
+        elif use.owner.kind == "unit" and (units is None or use.owner.name in units):
+            who = facts.graph.label(use.owner.name)
+            verb = "writes to" if use.action in WRITES else "reads from"
+            out.append(f"{who} {verb} table {use.table} {_at(use.loc)}")
     for ds in facts.datasets:
         if ds.owner.kind == "job" and (jobs is None or ds.owner.name in jobs):
             verb = "writes" if ds.writes else "reads"
@@ -139,7 +148,7 @@ def feature_facts(facts: AppFacts, feature: Feature) -> list[str]:
     out = [
         *call_facts(facts, jobs, programs),
         *unit_facts(facts, set(feature.units)),
-        *data_facts(facts, jobs, programs),
+        *data_facts(facts, jobs, programs, set(feature.units)),
         *perform_facts(facts, set(feature.programs[:1])),
     ]
     for endpoint in feature.endpoints:

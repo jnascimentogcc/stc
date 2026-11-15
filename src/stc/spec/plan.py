@@ -122,7 +122,7 @@ def _interface_facts(facts: AppFacts, feature: Feature) -> list[str]:
     lines = [
         *ctx.call_facts(facts, jobs, programs),
         *ctx.unit_facts(facts, set(feature.units)),
-        *ctx.data_facts(facts, jobs, programs),
+        *ctx.data_facts(facts, jobs, programs, set(feature.units)),
     ]
     lines += [f"Endpoint {e.detail} defined at {e.loc}" for e in feature.endpoints]
     lines += [f"Topic {t.key} ({t.role}) at {t.loc}" for t in feature.topics]
@@ -155,7 +155,8 @@ def spec_contexts(
     headers = ctx._file_chunks(
         conn, app_id, feature.files, kinds=ctx.header_kinds(feature), limit=12
     )
-    tables = sorted({u.table for u in facts.tables if u.owner.name in set(feature.programs)})
+    owners = set(feature.programs) | set(feature.units)
+    tables = sorted({u.table for u in facts.tables if u.owner.name in owners})
     copybooks = [
         facts.copybooks[c.copybook].path
         for c in facts.copybook_uses
@@ -165,6 +166,7 @@ def spec_contexts(
         conn, app_id, list(dict.fromkeys(copybooks)) + (feature.files if mainframe else []),
         regex=_DATA_LAYOUT if mainframe else None, limit=50,
     )  # fmt: skip
+    model_files = list(dict.fromkeys(p for t in tables for p in facts.table_files.get(t, [])))
     ddl = (
         ctx._file_chunks(
             conn,
@@ -177,7 +179,9 @@ def spec_contexts(
         else []
     )
     shared = ctx.feature_facts(facts, feature)
-    data_lines = ctx.data_facts(facts, set(feature.jobs), set(feature.programs))[:MAX_FACTS]
+    data_lines = ctx.data_facts(
+        facts, set(feature.jobs), set(feature.programs), set(feature.units)
+    )[:MAX_FACTS]
     rules = base["rules"]
     flow = base["flow"]
     return {
@@ -186,7 +190,10 @@ def spec_contexts(
         "spec-rules": SectionContext(
             _pack(ctx._merge(rules.items, flow.items)), rules.facts or shared[:40]
         ),
-        "spec-data": SectionContext(_pack(ctx._merge(ddl, layout)), data_lines),
+        "spec-data": SectionContext(
+            _pack(ctx._merge(ddl, ctx._file_chunks(conn, app_id, model_files, limit=20), layout)),
+            data_lines,
+        ),
         "spec-interfaces": SectionContext(_pack(headers), _interface_facts(facts, feature)),
         "spec-design": SectionContext(flow.items, shared[:80]),
         "spec-acceptance": SectionContext(_pack(ctx._merge(rules.items, headers)), shared[:40]),
@@ -243,7 +250,7 @@ def _feature_page(
         _static(_section("Legacy flow", diagrams.feature_diagram(facts, feature))),
         _part("spec-data", c["spec-data"], stack),
         _static(
-            _section("Tables", _data_access_table(facts, programs)),
+            _section("Tables", _data_access_table(facts, programs, set(feature.units))),
             _section("Datasets", _datasets_table(facts, jobs)),
         ),
         _part("spec-interfaces", c["spec-interfaces"], stack),
@@ -286,8 +293,8 @@ def _shared_resources(facts: AppFacts, features: list[Feature]) -> str | None:
 
 def _example_path(facts: AppFacts) -> str:
     """A path from the application itself, to show what a citation looks like."""
-    if facts.graph:
-        first = next(iter(facts.graph.units.values()))
+    if any(not u.inline for u in facts.graph.units.values()):
+        first = next(u for u in facts.graph.units.values() if not u.inline)
         return f"{first.path}:{first.start}-{first.end}"
     return "src/PROG.cbl:14-33"
 

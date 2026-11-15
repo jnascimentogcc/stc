@@ -115,13 +115,21 @@ def _jobs_table(facts: AppFacts, jobs: list[str] | None = None) -> str | None:
     return _table(["Job", "Step", "Runs", "Evidence"], rows) if rows else None
 
 
-def _data_access_table(facts: AppFacts, programs: set[str] | None = None) -> str | None:
+def _data_access_table(
+    facts: AppFacts, programs: set[str] | None = None, units: set[str] | None = None
+) -> str | None:
     grouped: dict[tuple[str, str], list[str]] = defaultdict(list)
     where: dict[tuple[str, str], str] = {}
     for use in facts.tables:
-        if use.owner.kind != "program" or (programs is not None and use.owner.name not in programs):
+        if use.owner.kind == "unit":
+            if units is not None and use.owner.name not in units:
+                continue
+            owner = facts.graph.label(use.owner.name)
+        elif use.owner.kind == "program" and (programs is None or use.owner.name in programs):
+            owner = use.owner.name
+        else:
             continue
-        key = (use.table, use.owner.name)
+        key = (use.table, owner)
         if use.action not in grouped[key]:
             grouped[key].append(use.action)
         where.setdefault(key, str(use.loc))
@@ -131,7 +139,7 @@ def _data_access_table(facts: AppFacts, programs: set[str] | None = None) -> str
         [f"`{table}`", f"`{program}`", ", ".join(sorted(actions)), f"`{where[(table, program)]}`"]
         for (table, program), actions in sorted(grouped.items())
     ]
-    return _table(["Table", "Program", "Access", "Evidence"], rows)
+    return _table(["Table", "Program or function", "Access", "Evidence"], rows)
 
 
 def _datasets_table(facts: AppFacts, jobs: set[str] | None = None) -> str | None:
@@ -398,7 +406,7 @@ def _feature_page(conn: psycopg.Connection, app_id: int, facts: AppFacts, featur
         _static(
             _section("Code involved", _feature_code_table(facts, feature)),
             _section("Batch steps", _jobs_table(facts, feature.jobs)) if feature.jobs else None,
-            _section("Tables", _data_access_table(facts, programs)),
+            _section("Tables", _data_access_table(facts, programs, set(feature.units))),
             _section("Datasets", _datasets_table(facts, jobs)),
             _section(
                 "Endpoints",

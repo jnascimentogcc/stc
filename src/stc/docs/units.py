@@ -279,9 +279,8 @@ def with_inline_handlers(graph: UnitGraph, path: str, lines: list[int]) -> dict[
     for index, line in enumerate(marks):
         later = [n for n in (*marks[index + 1 :], *starts) if n > line]
         end = (min(later) - 1) if later else line + 40
-        unit = Unit(f"{path}::@{line}", f"@{line}", f"route at line {line}", path, line, end,
-                    inline=True)  # fmt: skip
-        made[line] = unit
+        label = f"inline handler at line {line}"
+        made[line] = Unit(f"{path}::@{line}", f"@{line}", label, path, line, end, inline=True)
     return made
 
 

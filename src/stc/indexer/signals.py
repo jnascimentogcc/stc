@@ -12,12 +12,14 @@ import re
 from pathlib import PurePosixPath
 from urllib.parse import urlsplit
 
+from stc.indexer.data_signals import data_signals
 from stc.indexer.mainframe_signals import MAINFRAME_LANGUAGES, mainframe_signals
 from stc.indexer.manifests import is_manifest, manifest_signals
 from stc.indexer.signal_types import Signal
 
 EXTRACTOR_VERSION = (
-    4  # 4: COBOL, copybook, JCL and DDL signals; 3: routes with a TS generic or the path on the
+    5  # 5: tables read and defined by code in other languages (SQL strings, ORM, migrations);
+    # 4: COBOL, copybook, JCL and DDL signals; 3: routes with a TS generic or the path on the
     # next line; 2: Spring ${property}, no tests
 )
 MAX_LINE = 2_000  # longer lines (minified code) are cut before matching
@@ -125,6 +127,7 @@ def extract_signals(path: PurePosixPath, text: str, language: str | None) -> lis
     found += _http_consumers(lines)
     found += _messaging(lines)
     found += _databases(lines)
+    found += data_signals(path, text, language)
     return _dedupe(found)
 
 

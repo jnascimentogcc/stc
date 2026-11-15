@@ -163,6 +163,22 @@ def _add_data(
                 flow.edge(d, runner, "reads", "dotted")
 
 
+def _add_unit_data(flow: Flow, facts: AppFacts, units: set[str]) -> None:
+    """The tables the functions and methods of a feature read and write."""
+    grouped: dict[tuple[str, str], list[str]] = defaultdict(list)
+    for use in facts.tables:
+        pair = (use.owner.name, use.table)
+        if use.owner.kind == "unit" and use.owner.name in units and use.action not in grouped[pair]:
+            grouped[pair].append(use.action)
+    for (key, table), actions in sorted(grouped.items()):
+        node = flow.node(f"unit:{key}", facts.graph.label(key), "box")
+        t = flow.node(f"table:{table}", table, "db")
+        if any(a not in WRITES for a in actions):
+            flow.edge(t, node, "reads", "dotted")
+        if any(a in WRITES for a in actions):
+            flow.edge(node, t, "writes")
+
+
 def architecture_diagram(facts: AppFacts) -> str | None:
     """How the application is organized: jobs, programs and the data they touch (mainframe), or
     the top-level folders and the stores it uses (anything else)."""
@@ -211,10 +227,11 @@ def feature_diagram(facts: AppFacts, feature: Feature) -> str | None:
         node = flow.node(f"endpoint:{endpoint.detail}", endpoint.detail, "round")
         flow.edge(me, node, "")
         for key in feature.handlers.get(str(endpoint.loc), []):
-            if key in graph.units and not graph.units[key].inline:
+            if key in graph.units:
                 flow.edge(
                     node, flow.node(f"unit:{key}", graph.units[key].label, "box"), "handled by"
                 )
+    _add_unit_data(flow, facts, set(feature.units))
     shown = 0
     for key in feature.units:
         for call in graph.callees(key):
