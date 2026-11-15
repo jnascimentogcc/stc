@@ -1,0 +1,41 @@
+# An isolated, empty copy of the whole system for end-to-end tests: its own project name (so its
+# own database volume), its own folders under ./e2e and its own ports. Nothing from your
+# development setup (.env, ./catalogs, ./data, the development database) is touched.
+#
+#   cp e2e/env.example .env.e2e        # set the passwords (and the OpenAI key to use the LLM)
+#   docker compose -p stc-e2e --env-file .env.e2e -f docker-compose.yml -f docker-compose.e2e.yml up -d --build
+#   open http://localhost:8180         # chat and /docs; API on :8100, MCP on :8865
+#
+# Put the applications to test in ./e2e/root (one folder each), then index them:
+#   docker compose -p stc-e2e --env-file .env.e2e -f docker-compose.yml -f docker-compose.e2e.yml run --rm cli index
+#
+# Back to an empty database and empty folders:
+#   docker compose -p stc-e2e --env-file .env.e2e -f docker-compose.yml -f docker-compose.e2e.yml down -v
+#   (then empty e2e/catalogs, e2e/appdocs, e2e/specs and e2e/data)
+
+x-e2e: &e2e
+  env_file: !override
+    - .env.e2e
+  volumes: !override
+    - ./e2e/root:/root-apps:ro
+    - ./e2e/catalogs:/catalogs
+    - ./e2e/appdocs:/appdocs
+    - ./e2e/specs:/specs
+    - ./e2e/data:/data
+
+services:
+  migrate:
+    <<: *e2e
+  api:
+    <<: *e2e
+    ports: !override
+      - "127.0.0.1:${STC_API_PORT:-8100}:8000"
+  mcp:
+    <<: *e2e
+    ports: !override
+      - "127.0.0.1:${STC_MCP_PORT:-8865}:8765"
+  web:
+    ports: !override
+      - "127.0.0.1:${STC_WEB_PORT:-8180}:8080"
+  cli:
+    <<: *e2e

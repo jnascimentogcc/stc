@@ -28,3 +28,10 @@ node_modules/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# End-to-end environment (docker-compose.e2e.yml): working folders, never versioned
+/e2e/root/
+/e2e/catalogs/
+/e2e/appdocs/
+/e2e/specs/
+/e2e/data/
