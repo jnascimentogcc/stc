@@ -161,6 +161,37 @@ def feature_facts(facts: AppFacts, feature: Feature) -> list[str]:
     return out[:MAX_FACTS]
 
 
+def unit_chunks(
+    conn: psycopg.Connection,
+    app_id: int,
+    facts: AppFacts,
+    feature: Feature,
+    *,
+    kinds: list[str] | None = None,
+    limit: int = 80,
+) -> list[ContextItem]:
+    """The chunks that hold the route registrations and the functions and methods a feature
+    reaches, entry points first: not the rest of the files they live in."""
+    if not feature.units:
+        return []
+    by_path: dict[str, list[ContextItem]] = {}
+    for item in _file_chunks(conn, app_id, feature.files, kinds=kinds, limit=600):
+        by_path.setdefault(item.path, []).append(item)
+    out: list[ContextItem] = []
+    for endpoint in feature.endpoints:
+        loc = endpoint.loc
+        out += [i for i in by_path.get(loc.path, []) if i.start_line <= loc.line <= i.end_line]
+    for key in feature.units:
+        unit = facts.graph.units.get(key)
+        if unit is not None:
+            out += [
+                i
+                for i in by_path.get(unit.path, [])
+                if i.start_line <= unit.end and i.end_line >= unit.start
+            ]
+    return _merge(out)[:limit]
+
+
 def header_kinds(feature: Feature) -> list[str]:
     """The chunks that say what a unit of the feature is: program and job headers in COBOL, the
     classes, functions and methods in the other languages."""
@@ -178,12 +209,19 @@ def feature_contexts(
     paths = feature.files
     shared = feature_facts(facts, feature)
     mainframe = feature.kind in ("job", "program")
-    headers = _file_chunks(conn, app_id, paths, kinds=header_kinds(feature), limit=12)
-    everything = _file_chunks(conn, app_id, paths, limit=120)
+    kinds = header_kinds(feature)
+    headers = unit_chunks(conn, app_id, facts, feature, kinds=kinds, limit=12) or _file_chunks(
+        conn, app_id, paths, kinds=kinds, limit=12
+    )
+    focus = unit_chunks(conn, app_id, facts, feature)
+    everything = _merge(focus, _file_chunks(conn, app_id, paths, limit=120))
     rules = _file_chunks(
         conn, app_id, paths,
         regex=_DECISIONS_MAINFRAME if mainframe else _DECISIONS_GENERIC, limit=60,
     )  # fmt: skip
+    if focus:  # the decisions of the code the feature runs, not of its neighbours in the files
+        in_focus = {i.label for i in focus}
+        rules = [r for r in rules if r.label in in_focus] or rules
     return {
         "summary": SectionContext(_pack(_merge(headers, everything)), shared[:60]),
         "flow": SectionContext(_pack(_merge(headers, everything)), shared),

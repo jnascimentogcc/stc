@@ -266,3 +266,44 @@ def test_python_decorators_and_test_files(poly: psycopg.Connection) -> None:
     features, _ = detect_features(facts, 10)
     assert [f.title for f in features] == ["Endpoints in api.py"]
     assert {facts.graph.label(k) for k in features[0].units} == {"post_order", "register_order"}
+
+
+# --- what the model is shown ---------------------------------------------------------------------
+
+
+def test_unit_chunks_keep_the_code_a_feature_runs_not_its_neighbours(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from stc.catalog.context import ContextItem
+    from stc.docs import context as ctx
+    from stc.docs.features import Feature
+
+    chunks = [
+        ContextItem("routes.php", 1, 9, "module", "routes"),
+        ContextItem("c.php", 1, 10, "method a", "a"),
+        ContextItem("c.php", 11, 20, "method b", "b"),  # a neighbour nobody in the feature calls
+        ContextItem("c.php", 21, 30, "method c", "c"),
+    ]
+    monkeypatch.setattr(ctx, "_file_chunks", lambda *a, **k: chunks)
+    facts = AppFacts("x", "x", None)
+    facts.graph = build_graph(
+        [d("c.php", "a", "method", 2, 8), d("c.php", "b", "method", 12, 18),
+         d("c.php", "c", "method", 22, 28), c("c.php", "c", 5)]
+    )  # fmt: skip
+    feature = Feature("f", "F", "endpoints", "a", Loc("routes.php", 3))
+    feature.endpoints = [Endpoint("GET /a", Loc("routes.php", 3))]
+    feature.units = facts.graph.reach(["c.php::a"])
+    feature.files = ["routes.php", "c.php"]
+    items = ctx.unit_chunks(None, 1, facts, feature)  # type: ignore[arg-type]
+    assert [i.label for i in items] == ["routes.php:1-9", "c.php:1-10", "c.php:21-30"]
+    assert ctx.unit_chunks(None, 1, facts, Feature("g", "G", "job", "j", Loc("j", 1))) == []  # type: ignore[arg-type]
+
+
+def test_the_default_stack_drops_the_batch_line_only_when_there_is_no_batch_work() -> None:
+    from stc.spec.stack import DEFAULT_STACK, adapt_default_stack
+
+    assert adapt_default_stack(DEFAULT_STACK, True) == DEFAULT_STACK
+    plain = adapt_default_stack(DEFAULT_STACK, False)
+    assert "Batch" not in plain and "Spring Boot" in plain
+    mine = "Language and runtime: Go.\nBatch work stays a cron job."
+    assert adapt_default_stack(mine, False) == mine

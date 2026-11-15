@@ -13,6 +13,15 @@ API: REST, asynchronous.
 Batch work becomes asynchronous services started on demand or on a schedule."""
 
 MAX_STACK_CHARS = 4000
+_BATCH_LINE = "\nBatch work becomes asynchronous services started on demand or on a schedule."
+
+
+def adapt_default_stack(stack: str, has_batch: bool) -> str:
+    """The default stack mentions batch work; an application with none (a web application) does
+    not need that line. A stack the person wrote is never changed."""
+    if stack == DEFAULT_STACK and not has_batch:
+        return stack.replace(_BATCH_LINE, "")
+    return stack
 
 
 class StackError(Exception):

@@ -31,6 +31,7 @@ from stc.docs.plan import (
     _table,
 )
 from stc.docs.store import Planner
+from stc.spec.stack import adapt_default_stack
 
 PART_TITLES = {
     "spec-intent": "Purpose and scope",
@@ -152,9 +153,10 @@ def spec_contexts(
 ) -> dict[str, SectionContext]:
     base = ctx.feature_contexts(conn, app_id, facts, feature)
     mainframe = feature.kind in ("job", "program")
-    headers = ctx._file_chunks(
-        conn, app_id, feature.files, kinds=ctx.header_kinds(feature), limit=12
-    )
+    kinds = ctx.header_kinds(feature)
+    headers = ctx.unit_chunks(
+        conn, app_id, facts, feature, kinds=kinds, limit=12
+    ) or ctx._file_chunks(conn, app_id, feature.files, kinds=kinds, limit=12)
     owners = set(feature.programs) | set(feature.units)
     tables = sorted({u.table for u in facts.tables if u.owner.name in owners})
     copybooks = [
@@ -373,6 +375,7 @@ def build_spec_plan(
     facts = build_facts(conn, base.app_id, base.name)
     read_tables(conn, base.app_id, facts.ddl_files)  # fails early if the DDL cannot be read
     features, skipped = detect_features(facts, max_features)
+    stack = adapt_default_stack(stack, bool(facts.jobs) or any(f.kind == "task" for f in features))
     deps = dependencies(facts, features)
     ordered, cyclic = migration_order(features, deps)
     by_slug = {f.slug: f for f in features}

@@ -88,7 +88,8 @@ PART_TASKS = {
     "small tasks, each deliverable and testable on its own, the last one verifying the acceptance "
     "scenarios. Each task cites the legacy code it covers. Do not number them yourself.",
     "spec-risks": "List the migration risks and open questions: behaviors that are hard to port "
-    "(numeric precision, record layouts, restart and ordering of batch steps, concurrency), "
+    "(numeric precision, record layouts, restart and ordering of batch steps, concurrency, "
+    "behavior supplied by a framework or the database rather than by the code shown), "
     "things the code does not show, and decisions a person must make. One statement per item.",
     "spec-strategy": "Propose the order and approach for migrating this application: which "
     "features go first and why, which shared data and components must exist first, and the "
