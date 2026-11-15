@@ -151,31 +151,284 @@ To implement a specification in a new project with Claude Code:
 
 ## Command reference
 
-Run `uv run stc --help` or `uv run stc <command> --help` for the full text. Settings come from `.env`; `--env-file FILE` (also `STC_ENV_FILE`) before the command uses another file, for example `uv run stc --env-file .env.other status`. `--dry-run` shows what a command would do (and its estimated cost) without doing it. `--yes` skips the confirmation asked before a large embedding or generation run.
+Run `uv run stc --help` or `uv run stc <command> --help` for the built-in text. Settings come from `.env`; `--env-file FILE` (also `STC_ENV_FILE`) goes **before** the command and uses another settings file, for example `uv run stc --env-file .env.other status`.
 
-| Command | What it does | Options and arguments |
+Options that mean the same everywhere:
+
+- `--dry-run` shows what the command would do, and its estimated cost, without doing it.
+- `--yes` skips the confirmation asked before a large run (embeddings above 1,000,000 tokens, or a generation run).
+- `--root DIR` is the folder with the applications (default `STC_ROOT`); `--source NAME` limits the work to one folder declared in `sources.toml`.
+
+Whatever is sent to a provider is already free of secrets: files that may hold credentials are excluded before any processing, and `--dry-run` shows what would go out.
+
+**Usual order:** `migrate-db` once → `check-providers` → `index` → `catalog --all` → `docs` / `spec` → `ask`, the chat or the MCP server. After the code changes, `index` again (it is incremental) and regenerate what you need.
+
+What each command needs:
+
+| Command | Database | Language model | Embeddings | Writes |
+|---|---|---|---|---|
+| `migrate-db`, `status`, `relations`, `query`, `map`, `corrections` | yes | no (`relations --confirm` yes) | no | the database; `map` also `_global-map.md` |
+| `detect`, `sync`, `version` | no | no | no | `sync` writes the cloned repositories |
+| `index`, `reindex`, `embed` | yes (not with `--dry-run`) | no | yes, unless `--skip-embeddings` | the database |
+| `catalog` | yes | catalog model | no | `STC_CATALOGS` |
+| `docs`, `spec` | yes | docs model (not with `--static-only`) | no | `STC_DOCS`, `STC_SPECS` |
+| `ask`, `evaluate --mode answers` | yes | chat model | yes (search) | `evaluate` writes `STC_DATA/evaluations` |
+| `serve-mcp` | yes | no | for search | nothing |
+
+### Setup and health
+
+#### `migrate-db`
+
+Applies the numbered SQL migrations (`src/stc/db/migrations/`) and sets up the two database roles: the schema owner, used only here (`STC_DB_MIGRATION_URL`), and the restricted `stc_app` role the rest of STC uses (`STC_DB_URL`, password `STC_APP_PASSWORD`). It is safe to run again: only migrations not yet applied run, and a migration that was edited after being applied is refused.
+
+```bash
+uv run stc migrate-db
+```
+
+#### `check-providers`
+
+Makes one tiny embeddings call and one tiny chat call to verify the keys, models and vector size in your settings. It sends two short fixed strings (a few tokens, never code), so it is the cheap first check on a new `.env`.
+
+```bash
+uv run stc check-providers
+```
+
+#### `version`
+
+Prints the installed STC version.
+
+### Finding and indexing code
+
+#### `sync`
+
+Clones or updates the GitHub repositories listed in `sources.toml` (shallow and read-only) into a folder under `STC_DATA` (one subfolder per repository), using `STC_GITHUB_TOKEN` (read access to the contents is enough). It does not index: run `index` afterwards to process what changed.
+
+| Option | Meaning |
+|---|---|
+| `--source NAME` | Only this source |
+| `--dry-run` | List what would be cloned or updated |
+
+```bash
+uv run stc sync --source team-a --dry-run
+```
+
+#### `detect`
+
+Lists the applications found in the Root, with the marker that identified each one (manifest, build file, or COBOL/JCL sources). It needs no database and changes nothing, so use it to check the detection and your `stc.toml` or `sources.toml` before indexing.
+
+```bash
+uv run stc detect --root /path/to/applications
+```
+
+#### `index`
+
+Indexes the Root, in stages: detect the applications → hygiene (noise exclusions and secret detection) → register the files (SHA-256 per file) → split the code into chunks and symbols (tree-sitter; COBOL, copybooks, JCL and screens have their own readers) → extract signals and derive the relations between applications → embed the chunks. It is **incremental and idempotent**: only files that changed since the last run are reprocessed, and a failure in one application does not stop the others. Each run is recorded (see `status`).
+
+| Option | Meaning |
+|---|---|
+| `--root DIR`, `--source NAME` | What to index |
+| `--dry-run` | Scan and report, without touching the database |
+| `--prune` | Also remove applications that are no longer in the Root |
+| `--skip-embeddings` | Stop after chunking (no provider is called) |
+| `--yes` | Do not ask before a large embedding run |
+
+```bash
+uv run stc index --root /path/to/applications
+uv run stc index --root /path/to/applications --dry-run   # what would be processed
+```
+
+#### `reindex [APPLICATION]`
+
+Like `index`, but chunks and signals are derived again **even for unchanged files**: use it after an STC upgrade that changes how code is read, or to rebuild one application. Chunks whose content did not change keep their vectors, so it costs no embedding calls unless the code changed. Without an argument it covers the whole Root.
+
+| Option | Meaning |
+|---|---|
+| `--skip-embeddings`, `--yes` | As in `index` |
+| `--root DIR`, `--source NAME` | What to read |
+
+```bash
+uv run stc reindex loans-core
+```
+
+#### `embed`
+
+Embeds the chunks that have no vector yet, or a stale one (another provider, model or input format), in batches with retries. Progress is committed along the way, so an interrupted run resumes where it stopped. `index` already does this; use `embed` on its own after changing the embeddings model or after `index --skip-embeddings`.
+
+```bash
+uv run stc embed --dry-run    # chunks to embed and a rough token estimate, no external call
+uv run stc embed
+```
+
+#### `status [APPLICATION]`
+
+Shows, per application, the files by status, the chunks embedded out of the total, the catalog state (none, partial, outdated, complete), the relations and the code version; then a "to do" list (chunks or catalog sections not embedded with the configured model, applications without a catalog, outdated catalogs) and the last five runs. With `--check` it also scans the Root, without writing, and lists the applications that are new or gone and the files added, changed and removed since the last run.
+
+```bash
+uv run stc status
+uv run stc status loans-core --check
+```
+
+#### `relations`
+
+Lists the relations between applications (`http`, `messaging`, `library`, `shared_database`, and for mainframe code `calls`, `batch`, `copybook`, `table`), each with a confidence (`high`, `medium`, `low`), the strongest evidence and the LLM verdict when there is one. Relations come from signals found in the code, never from a guess.
+
+| Option | Meaning |
+|---|---|
+| `--refresh` | Re-extract the signals and derive again before listing |
+| `--confirm` | Ask the LLM to confirm or reject the `low` and `medium` relations (cited code is sent) |
+| `--recheck` | With `--confirm`: also judge the ones left `unsure` |
+| `--dry-run` | With `--confirm`: only show what would be sent |
+
+```bash
+uv run stc relations
+uv run stc relations --confirm --dry-run
+```
+
+### Generating knowledge
+
+#### `catalog APPLICATION` / `--all`
+
+Generates the **catalog** of an application: a markdown file `STC_CATALOGS/<application>.md` with what it is, what it does, its interfaces, data, configuration and dependencies, where every statement cites file and lines that were checked against the index (a statement with no valid evidence is dropped and reported as a gap). It also refreshes `_global-map.md`. Needs `STC_LLM_CATALOG_MODEL`. Sections are regenerated only when their inputs changed, and your corrections between the `stc:manual` markers are kept.
+
+| Option | Meaning |
+|---|---|
+| `APPLICATION` or `--all` | One application (see `stc detect`) or every indexed one |
+| `--dry-run` | Show what would be sent and the estimate |
+| `--force` | Regenerate even if the inputs did not change |
+| `--yes` | Do not ask before running |
+
+```bash
+uv run stc catalog loans-core --dry-run
+uv run stc catalog --all
+```
+
+#### `map`
+
+Rebuilds the **global map** (`_global-map.md`: how the applications relate, shared resources and technologies) from the indexed relations and the catalogs. It is deterministic: no model is called and it costs nothing.
+
+```bash
+uv run stc map
+```
+
+#### `docs APPLICATION` / `--all`
+
+Generates the **application documentation** in `STC_DOCS/<application>/`: linked pages (overview, architecture, features, data model, interfaces, dependencies, configuration, operations) with Mermaid diagrams. Facts, tables and diagrams come from static analysis (symbols, signals, relations, DDL, and for terminal screens the fields and the navigation between them); the model only writes the narrative, from evidence assembled by code, and every sentence cites verified lines. Features are detected from entry points (batch jobs, programs nobody calls, endpoints, commands, consumers), at most `STC_DOCS_MAX_FEATURES`. Pages whose inputs did not change are not regenerated; `stc:manual` blocks are preserved. The model is `STC_LLM_DOCS_MODEL` (default: the catalog model).
+
+| Option | Meaning |
+|---|---|
+| `APPLICATION` or `--all` | One application or every indexed one |
+| `--dry-run` | Which pages would be written, and the cost |
+| `--force` | Regenerate every page |
+| `--static-only` | Write only tables and diagrams; no model is called and the narrative parts are marked as not generated (it never overwrites model text) |
+| `--yes` | Do not ask before running |
+
+```bash
+uv run stc docs loans-core --static-only   # free: facts and diagrams only
+uv run stc docs --all
+```
+
+#### `spec APPLICATION` / `--all`
+
+Generates the **migration specifications** in `STC_SPECS/<application>/`: an `index.md` (target stack, features in a migration order computed from the data they read and write, shared data, strategy), a `CLAUDE.md` for the new project, and one `features/<feature>.md` per feature with purpose, requirements, business rules, data, interfaces, a proposed design for the target stack, acceptance scenarios, an implementation plan and open questions, every statement citing the legacy code. For an application with terminal screens each feature also gets the user interaction, the form to build from each field's `PIC` and the API contract between a new frontend and the backend. STC does not write the new code: the files are meant for a coding assistant, one feature at a time.
+
+| Option | Meaning |
+|---|---|
+| `APPLICATION` or `--all` | One application or every indexed one |
+| `--stack FILE` | A text file describing the target technology (also `STC_SPEC_STACK`). Default: Java, Spring Boot, JPA, PostgreSQL, asynchronous REST, plus an Angular frontend when there are screens. See `examples/stack-spring-angular.txt` |
+| `--dry-run`, `--force`, `--yes` | As in `docs` |
+| `--static-only` | Write only the order, dependencies, tables and diagrams; no model is called |
+
+```bash
+uv run stc spec teller --stack examples/stack-spring-angular.txt --dry-run
+uv run stc spec teller --stack examples/stack-spring-angular.txt
+```
+
+### Asking questions
+
+#### `ask "QUESTION"`
+
+Asks one question through the same agent as the chat and prints the answer with its citations (not saved as a conversation); the tool calls it makes go to stderr. Needs `STC_LLM_CHAT_MODEL`.
+
+| Option | Meaning |
+|---|---|
+| `--app NAME` | Restrict to this application (repeatable) |
+| `--profile technical\|functional` | Technical (default) answers about code and architecture; functional answers in business language |
+
+```bash
+uv run stc ask "Which applications call the payments API?"
+uv run stc ask "What is the minimum income for a loan?" --app loans-core --profile functional
+```
+
+#### `query SUBCOMMAND`
+
+Calls the query engine directly (the same one behind the chat and the MCP server): read-only, no language model, and a good way to script or debug. Every subcommand accepts `--json` for the structured result; list-like ones accept `--limit` (up to 50) and `--offset`.
+
+| Subcommand | What it does | Options |
 |---|---|---|
-| `version` | Print the version | |
-| `migrate-db` | Apply database migrations and set up the `stc_app` role | |
-| `check-providers` | One tiny embeddings call and one tiny chat call, to verify keys and models | |
-| `sync` | Clone or update the GitHub sources (shallow, read-only) | `--source NAME`, `--dry-run` |
-| `detect` | List the detected applications (no database) | `--root DIR`, `--source NAME` |
-| `index` | Detect, apply hygiene, register, chunk, derive relations and embed | `--root DIR`, `--source NAME`, `--dry-run`, `--prune` (remove applications no longer in the Root), `--skip-embeddings`, `--yes` |
-| `reindex [APP]` | Reprocess one application, or all, even if unchanged | `--root DIR`, `--source NAME`, `--skip-embeddings`, `--yes` |
-| `embed` | Embed chunks that have no vector yet | `--dry-run`, `--yes` |
-| `relations` | List relations with confidence, evidence and LLM verdicts | `--root DIR`, `--refresh` (re-derive), `--confirm` (ask the LLM about uncertain ones), `--recheck`, `--dry-run`, `--yes` |
-| `status [APP]` | What is indexed, what is pending, how the last runs went | `--check` (scan the Root for changes), `--root DIR`, `--source NAME` |
-| `catalog APP` / `--all` | Generate catalogs and refresh the global map | `--all`, `--dry-run`, `--force`, `--yes` |
-| `map` | Rebuild the global map from the index (no model) | |
-| `docs APP` / `--all` | Generate the application documentation | `--all`, `--dry-run`, `--force`, `--static-only`, `--yes` |
-| `spec APP` / `--all` | Generate the migration specifications | `--all`, `--stack FILE`, `--dry-run`, `--force`, `--static-only`, `--yes` |
-| `ask "QUESTION"` | One question through the chat agent (not saved) | `--app NAME` (repeatable), `--profile technical\|functional` |
-| `query ...` | Query the engine directly: `apps`, `catalog`, `map`, `deps`, `search`, `catalogs`, `grep`, `symbol`, `read`, `status` | `--json` |
-| `corrections list\|approve\|reject` | Review catalog corrections proposed from the chat | |
-| `evaluate` | Run the reference questions; report search recall and answer quality | `--questions FILE`, `--mode retrieval\|answers\|all`, `--id ID` (repeatable), `--k N`, `--baseline FILE\|latest\|none`, `--save/--no-save`, `--fail-under 0-1`, `--yes` |
-| `serve-mcp` | Run the MCP server (read-only) | `--transport stdio\|http`, `--host`, `--port` |
+| `apps` | List applications | `--name`, `--technology`, `--related-to` |
+| `catalog APPLICATION` | An application's catalog, whole or one section | `--section ID` |
+| `map` | The global map | |
+| `deps APPLICATION` | Direct and transitive dependencies, with proof | `--direction depends_on\|used_by\|both`, `--depth 1-6` |
+| `search "QUERY"` | Search the code by meaning and exact terms together | `--app`, `--language`, `--path` (repeatable) |
+| `catalogs "QUERY"` | Search the catalogs (functional knowledge) | `--app` (repeatable) |
+| `grep PATTERN` | Exact lines, by text or regex | `--regex`, `-i/--ignore-case`, `--app`, `--language`, `--path` |
+| `symbol NAME` | Where a symbol is defined | `--kind`, `--contains`, `--usages`, `--app` |
+| `read APPLICATION PATH` | A line range of an indexed file; secret files are refused | `--start`, `--end` |
+| `status` | Indexing status | `--application` |
 
-Settings used by the generation commands (see `.env.example`): `STC_CATALOGS`, `STC_DOCS`, `STC_SPECS` (output folders), `STC_LLM_PROVIDER`, `STC_LLM_CATALOG_MODEL`, `STC_LLM_CHAT_MODEL`, `STC_LLM_DOCS_MODEL` (defaults to the catalog model), `STC_LANGUAGE`, `STC_DOCS_MAX_FEATURES` (default 15 feature pages), `STC_SPEC_MAX_FEATURES` (default 30) and `STC_SPEC_STACK`.
+```bash
+uv run stc query search "how are invoices paid" --app billing --limit 5
+uv run stc query read loans-core src/LNELIG.cbl --start 30 --end 60
+uv run stc query deps collections --direction depends_on --json
+```
+
+#### `corrections list|approve|reject`
+
+Reviews the catalog corrections proposed from the chat, which wait for a maintainer. `list` shows the proposals waiting (`--status proposed|approved|rejected`, or `--all`); `approve ID` writes a proposal into the manual block of its catalog section, where it becomes authoritative and survives regeneration; `reject ID` discards it and leaves the catalog unchanged. Both accept `--note "why"`.
+
+```bash
+uv run stc corrections list
+uv run stc corrections approve 3 --note "confirmed with the team"
+```
+
+### Quality and servers
+
+#### `evaluate`
+
+Runs the reference questions of a YAML file and reports quality, so you can compare runs after changing chunking, embeddings, prompts or models. The `retrieval` mode measures search recall@1/@5/@k and MRR of the expected code, for the hybrid search and for words only (almost free; one tiny embeddings call per question). The `answers` mode also asks the chat agent each question (after a confirmation) and measures the share of answers that satisfy every check, evidence recall, citation precision, and how often an unanswerable question was admitted to be so. Reports are saved under `STC_DATA/evaluations` and compared with the previous one.
+
+| Option | Meaning |
+|---|---|
+| `--questions FILE` | The reference questions (default `evaluation/questions.yaml`) |
+| `--mode retrieval\|answers\|all` | What to measure (default `retrieval`) |
+| `--id ID` | Only this question (repeatable) |
+| `--k N` | How many search results count (default 10, max 50) |
+| `--baseline FILE\|latest\|none` | Report to compare with (default `latest`) |
+| `--save` / `--no-save` | Store the report (default: store) |
+| `--fail-under 0-1` | Exit with status 1 if answers passed (or search recall@k) falls below this, for CI |
+| `--yes` | Do not ask before running `answers` |
+
+```bash
+uv run stc evaluate                                                        # search quality, free
+uv run stc evaluate --questions evaluation/cobol-bank-questions.yaml --mode all --fail-under 0.8
+```
+
+#### `serve-mcp`
+
+Runs the MCP server over the query engine (read-only; see [MCP server](#mcp-server)). With `--transport stdio` (default) a client on the same machine starts it; with `--transport http` it listens for shared use and requires `Authorization: Bearer <STC_MCP_TOKEN>` (it refuses to start without the token).
+
+| Option | Meaning |
+|---|---|
+| `--transport stdio\|http` | How clients connect |
+| `--host`, `--port` | HTTP address (defaults `STC_MCP_HOST`, `STC_MCP_PORT`) |
+
+```bash
+uv run stc serve-mcp --transport http --port 8765
+```
+
+### Settings used by the generation commands
+
+See `.env.example`: `STC_CATALOGS`, `STC_DOCS`, `STC_SPECS` (output folders), `STC_LLM_PROVIDER`, `STC_LLM_CATALOG_MODEL`, `STC_LLM_CHAT_MODEL`, `STC_LLM_DOCS_MODEL` (defaults to the catalog model), `STC_LANGUAGE`, `STC_DOCS_MAX_FEATURES` (default 15 feature pages), `STC_SPEC_MAX_FEATURES` (default 30) and `STC_SPEC_STACK`.
 
 ## MCP server
 
