@@ -28,7 +28,7 @@ def chunked(rel: str) -> ChunkedFile:
 
 def test_sample_root_is_detected_without_stc_toml() -> None:
     found = detect_applications(SAMPLE)
-    assert [s.name for s in found] == ["collections", "loans-core"]
+    assert [s.name for s in found] == ["collections", "loans-core", "teller"]
     assert {s.detected_by for s in found} == {"auto"}
 
 

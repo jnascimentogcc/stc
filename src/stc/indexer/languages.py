@@ -22,7 +22,7 @@ _BY_SUFFIX = {
     ".md": "markdown", ".rst": "restructuredtext", ".txt": "text",
     ".cbl": "cobol", ".cob": "cobol", ".cobol": "cobol",
     ".cpy": "cobol-copybook", ".copy": "cobol-copybook",
-    ".jcl": "jcl", ".proc": "jcl", ".prc": "jcl",
+    ".bms": "bms", ".jcl": "jcl", ".proc": "jcl", ".prc": "jcl",
 }  # fmt: skip
 
 # File suffixes that make a folder a COBOL application when no project marker does (IDX-02).

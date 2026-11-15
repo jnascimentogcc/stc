@@ -12,6 +12,7 @@ known at run time (`CALL WS-PROG`) becomes an unresolved key that starts with `?
 | copybook | the copybook file | `COPY`, `EXEC SQL INCLUDE` |
 | table | `CREATE TABLE` | `EXEC SQL` |
 | dataset | `DD` with `DISP=NEW/MOD` | `DD` with `DISP=SHR/OLD` |
+| screen | `SCREEN SECTION`, BMS map | `DISPLAY`, `ACCEPT`, `SEND MAP` (`screen_signals`) |
 """
 
 import re
@@ -25,9 +26,10 @@ from stc.indexer.jcl import (
     parse_jcl,
     run_programs,
 )
+from stc.indexer.screen_signals import bms_screens, cics_map, cobol_screens
 from stc.indexer.signal_types import Signal
 
-MAINFRAME_LANGUAGES = frozenset({"cobol", "cobol-copybook", "jcl", "sql"})
+MAINFRAME_LANGUAGES = frozenset({"cobol", "cobol-copybook", "jcl", "sql", "bms"})
 
 _NAME = r"[A-Z0-9][A-Z0-9-]*"
 _PROGRAM_ID = re.compile(rf"^PROGRAM-ID\s*\.\s*({_NAME})", re.I)
@@ -97,6 +99,8 @@ def mainframe_signals(path: PurePosixPath, text: str, language: str) -> list[Sig
         return found
     if language == "jcl":
         return _jcl(lines)
+    if language == "bms":
+        return bms_screens(lines)
     return _ddl(text)
 
 
@@ -113,7 +117,8 @@ def _cobol(lines: list[str], language: str) -> list[Signal]:
     source = read_source(lines)
     found: list[Signal] = []
     in_exec: set[int] = set()
-    for first, last, statement in statements(source):
+    parsed = statements(source)
+    for first, last, statement in parsed:
         masked = mask_literals(statement)
         block = _EXEC_BLOCK.match(masked)
         if block is None:
@@ -164,10 +169,14 @@ def _cobol(lines: list[str], language: str) -> list[Signal]:
             found.append(
                 _signal("copybook", "consumes", name, f"COPY {name}", line.number, line.number)
             )
+    if language == "cobol":
+        found += cobol_screens(source, parsed)
     return found
 
 
 def _cics(statement: str, masked: str, first: int, last: int) -> list[Signal]:
+    if maps := cics_map(statement, masked, first, last):
+        return maps
     verb = _CICS_VERB.search(masked)
     target = _CICS_PROGRAM.search(masked)
     if verb is None or target is None:

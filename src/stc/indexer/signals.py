@@ -18,7 +18,8 @@ from stc.indexer.manifests import is_manifest, manifest_signals
 from stc.indexer.signal_types import Signal
 
 EXTRACTOR_VERSION = (
-    6  # 6: route parameters are not calls; Symfony, Slim, DRF, Fastify and router prefixes;
+    7  # 7: screens (SCREEN SECTION, positioned ACCEPT/DISPLAY, BMS maps, SEND/RECEIVE MAP);
+    # 6: route parameters are not calls; Symfony, Slim, DRF, Fastify and router prefixes;
     # 5: tables read and defined by code in other languages (SQL strings, ORM, migrations);
     # 4: COBOL, copybook, JCL and DDL signals; 3: routes with a TS generic or the path on the
     # next line; 2: Spring ${property}, no tests
