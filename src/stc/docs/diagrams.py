@@ -10,6 +10,14 @@ import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 
+from stc.docs.components import (
+    Component,
+    component_links,
+    components,
+    layer_links,
+    layers_with_tables,
+    tables_by_component,
+)
 from stc.docs.ddl import Table
 from stc.docs.facts import WRITES, AppFacts, Owner
 from stc.docs.features import Feature
@@ -179,6 +187,50 @@ def _add_unit_data(flow: Flow, facts: AppFacts, units: set[str]) -> None:
             flow.edge(node, t, "writes")
 
 
+def _components_diagram(facts: AppFacts, found: dict[str, Component]) -> str | None:
+    """With one layer only, the components themselves and the calls between them."""
+    links = component_links(facts, found)
+    flow = Flow("LR")
+    for a in sorted(links.calls):
+        for b, count in sorted(links.calls[a].items()):
+            suffix = f" ({count})" if count > 1 else ""
+            flow.edge(
+                flow.node(f"c:{a}", found[a].name),
+                flow.node(f"c:{b}", found[b].name),
+                f"calls{suffix}",
+            )
+    for key, tables in sorted(tables_by_component(facts, found).items()):
+        for table in sorted(tables)[:6]:
+            flow.edge(
+                flow.node(f"c:{key}", found[key].name), flow.node(f"t:{table}", table, "db"), "uses"
+            )
+    return _fenced(flow, "components")
+
+
+def layers_diagram(facts: AppFacts) -> str | None:
+    """The folders of the code as layers, the calls between them and the data they touch."""
+    found = components(facts)
+    links = layer_links(facts, found)
+    if not links:
+        return _components_diagram(facts, found)
+    flow = Flow("LR")
+    for (a, b), count in sorted(links.items(), key=lambda item: (-item[1], item[0])):
+        flow.edge(
+            flow.node(f"layer:{a}", a),
+            flow.node(f"layer:{b}", b),
+            f"{count} call{'s' * (count > 1)}",
+        )
+    data = layers_with_tables(facts, found)
+    if data:
+        database = facts.databases[0] if len(facts.databases) == 1 else "database"
+        store = flow.node("@db", database, "db")
+        for layer, count in sorted(data.items()):
+            flow.edge(
+                flow.node(f"layer:{layer}", layer), store, f"{count} table{'s' * (count > 1)}"
+            )
+    return _fenced(flow, "layers")
+
+
 def architecture_diagram(facts: AppFacts) -> str | None:
     """How the application is organized: jobs, programs and the data they touch (mainframe), or
     the top-level folders and the stores it uses (anything else)."""
@@ -189,6 +241,9 @@ def architecture_diagram(facts: AppFacts) -> str | None:
             _program_node(flow, facts, program)
         _add_data(flow, facts, by_step, None, None)
         return _fenced(flow, "components")
+    layered = layers_diagram(facts)
+    if layered:
+        return layered
     me = flow.node("@self", facts.name, "stadium")
     for directory, count in facts.directories[:12]:
         flow.edge(me, flow.node(f"dir:{directory}", f"{directory}/ ({count} files)"), "")

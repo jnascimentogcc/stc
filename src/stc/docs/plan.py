@@ -11,6 +11,11 @@ from stc.catalog.context import AppContext, SectionContext, build_context
 from stc.catalog.store import _cell
 from stc.docs import context as ctx
 from stc.docs import diagrams
+from stc.docs.components import (
+    component_links,
+    components,
+    tables_by_component,
+)
 from stc.docs.ddl import Table, read_tables
 from stc.docs.facts import AppFacts, build_facts
 from stc.docs.features import Feature, detect_features
@@ -243,16 +248,82 @@ def _feature_code_table(facts: AppFacts, feature: Feature) -> str | None:
 # --------------------------------------------------------------------------------------------
 
 
-def _key_facts(facts: AppFacts, tables: list[Table]) -> str:
+_KIND_INTRO = {
+    "job": "a batch job",
+    "program": "a program that nothing calls",
+    "endpoints": "the endpoints of one controller or route file",
+    "task": "a command or background job",
+    "consumer": "a message consumer",
+}
+
+
+def _features_intro(features: list[Feature]) -> str:
+    kinds = [k for k in _KIND_INTRO if any(f.kind == k for f in features)]
+    what = ", ".join(_KIND_INTRO[k] for k in kinds[:-1])
+    what = f"{what} or {_KIND_INTRO[kinds[-1]]}" if what else _KIND_INTRO[kinds[-1]]
+    return (
+        f"Each feature is something the application does when something starts it: {what}. "
+        "They are found from the code, and every page follows what the feature runs and the "
+        "data it touches."
+    )
+
+
+def _components_table(facts: AppFacts) -> str | None:
+    """The classes (or files of functions) of the application, how big they are, what they call and
+    what calls them, and the tables they use."""
+    found = components(facts)
+    if not found:
+        return None
+    links = component_links(facts, found)
+    used = tables_by_component(facts, found)
+
+    def names(keys: list[str]) -> str:
+        return _code(*(found[k].name for k in keys[:5])) + (" …" if len(keys) > 5 else "")
+
+    ranked = sorted(
+        found.values(),
+        key=lambda c: (
+            -(sum(links.calls[c.key].values()) + sum(links.called_by[c.key].values())),
+            c.path,
+            c.line,
+        ),
+    )
+    rows = [
+        [
+            f"`{c.name}`",
+            f"`{c.layer}`",
+            f"`{c.path}:{c.line}`",
+            str(len(c.units)),
+            names(sorted(links.calls[c.key])) if links.calls[c.key] else "—",
+            names(sorted(links.called_by[c.key])) if links.called_by[c.key] else "—",
+            _code(*sorted(used[c.key])[:6]) if used[c.key] else "—",
+        ]
+        for c in ranked[:80]
+    ]
+    table = _table(
+        ["Component", "Layer", "Defined at", "Methods", "Calls", "Called by", "Tables"], rows
+    )
+    if len(ranked) > 80:
+        table += f"\n\n_The 80 components with the most calls of {len(ranked)}._"
+    return table
+
+
+def _key_facts(facts: AppFacts, tables: list[Table], features: list[Feature] | None = None) -> str:
     items = [("Code version", f"`{facts.code_version or 'unknown'}`")]
     if facts.languages:
         items.append(("Languages", ", ".join(f"{lang} ({n})" for lang, n in facts.languages)))
+    found = components(facts)
+    units = [u for u in facts.graph.units.values() if not u.inline]
     counts = [
         ("Programs", len(facts.programs)),
         ("Batch jobs", len(facts.jobs)),
         ("Copybooks", len(facts.copybooks)),
-        ("Tables defined", len(tables)),
+        ("Classes", len({c.key for c in found.values() if "::" in c.key})),
+        ("Functions and methods", len(units)),
+        ("Tables defined", max(len(tables), len(facts.table_files))),
+        ("Tables used", len({u.table for u in facts.tables})),
         ("Exposed endpoints", len(facts.endpoints)),
+        ("Background tasks", sum(1 for f in features or [] if f.kind == "task")),
         ("Related applications", len({r.other for r in facts.relations})),
     ]
     items += [(name, str(n)) for name, n in counts if n]
@@ -274,6 +345,7 @@ def build_plan(conn: psycopg.Connection, application: str, max_features: int) ->
         ),
         _static(
             _section("Diagram", diagrams.architecture_diagram(facts)),
+            _section("Components", _components_table(facts)),
             _section("Programs", _programs_table(facts)),
             _section("Batch jobs", _jobs_table(facts)),
             None
@@ -295,21 +367,30 @@ def build_plan(conn: psycopg.Connection, application: str, max_features: int) ->
             f"[{f.title}]({f.slug}.md)",
             KIND_LABELS[f.kind],
             f"`{f.entry_loc}`",
-            str(len(f.programs) or len(f.files)),
+            str(
+                len(f.programs)
+                or len(
+                    [
+                        u
+                        for u in f.units
+                        if u in facts.graph.units and not facts.graph.units[u].inline
+                    ]
+                )
+                or len(f.files)
+            ),
         ]  # noqa: E501
         for f in features
     ]
     _extend(
         index_of_features,
         _static(
-            "Each feature is something the application does when something starts it: a batch job, "
-            "a program that nothing calls, a group of endpoints or a message consumer. They are "
-            "found from the code, and every page follows what the feature runs and the data it "
-            "touches."
+            _features_intro(features)
             if features
             else "No features were detected: the application has no batch job, entry program, "
-            "exposed endpoint or message consumer in the indexed code.",
-            _table(["Feature", "Kind", "Entry point", "Programs or files"], rows) if rows else None,
+            "exposed endpoint, command or message consumer in the indexed code.",
+            _table(["Feature", "Kind", "Entry point", "Programs, functions or files"], rows)
+            if rows
+            else None,
             _section(
                 "Not documented in detail",
                 "\n".join(f"- {f.title} (`{f.entry_loc}`)" for f in skipped)
@@ -356,11 +437,17 @@ def build_plan(conn: psycopg.Connection, application: str, max_features: int) ->
         )
         pages.append(run)
 
-    pages.insert(0, _index_page(base, facts, tables, pages))
+    pages.insert(0, _index_page(base, facts, tables, pages, features))
     return Plan(base.name, base.code_version, base.files, pages, [f.title for f in skipped])
 
 
-def _index_page(base: AppContext, facts: AppFacts, tables: list[Table], pages: list[Page]) -> Page:
+def _index_page(
+    base: AppContext,
+    facts: AppFacts,
+    tables: list[Table],
+    pages: list[Page],
+    features: list[Feature],
+) -> Page:
     page = Page(INDEX_PAGE, facts.name, "Overview")
     listing = "\n".join(
         f"- [{p.title}]({p.path})"
@@ -372,7 +459,7 @@ def _index_page(base: AppContext, facts: AppFacts, tables: list[Table], pages: l
         _part("overview", base.sections["purpose"]),
         _part("business", base.sections["business"]),
         _static(
-            _section("Key facts", _key_facts(facts, tables)),
+            _section("Key facts", _key_facts(facts, tables, features)),
             _section("Context", diagrams.context_diagram(facts)),
         ),
         _part("stack", base.sections["stack"]),

@@ -43,6 +43,8 @@ _ENV_PATTERNS = tuple(
         r"""System\.getenv\(\s*"([A-Z][A-Z0-9_]+)""",
         r"""Environment\.GetEnvironmentVariable\(\s*"([A-Z][A-Z0-9_]+)""",
         r"""\bENV\[\s*['"]([A-Z][A-Z0-9_]+)""",
+        r"""(?<![\w>:$])env\(\s*['"]([A-Z][A-Z0-9_]+)""",  # Laravel
+        r"""\$_(?:ENV|SERVER)\[\s*['"]([A-Z][A-Z0-9_]+)""",  # PHP
         r"""\$\{([A-Z][A-Z0-9_]+)(?::[^}]*)?\}""",
     )
 )
@@ -337,7 +339,8 @@ def _configuration(conn: psycopg.Connection, app_id: int) -> SectionContext:
     rows = conn.execute(
         "SELECT f.path, c.start_line, c.content FROM chunks c JOIN files f ON f.id = c.file_id"
         " WHERE f.application_id = %s AND f.status IN ('indexed', 'unsupported')"
-        " AND c.content ~* '(environ|getenv|process\\.env|Environment\\.|ENV\\[|\\$\\{)'"
+        " AND c.content ~* '(environ|getenv|process\\.env|Environment\\.|ENV\\[|\\$\\{"
+        "|env\\(|_SERVER)'"
         " ORDER BY f.path, c.start_line LIMIT 400",
         (app_id,),
     ).fetchall()

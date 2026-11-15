@@ -14,8 +14,10 @@ from stc.catalog.context import (
     _manifest_where,
     _pack,
 )
+from stc.docs.components import component_links, components, layer_links
 from stc.docs.facts import WRITES, AppFacts, Loc
 from stc.docs.features import Feature
+from stc.docs.units import background_entries
 
 _STATUS = "f.status IN ('indexed', 'unsupported')"
 _DECISIONS_MAINFRAME = r"(EVALUATE|\mIF\M|COMPUTE|\mWHEN\M|\mPERFORM\M.*\mUNTIL\M)"
@@ -23,6 +25,15 @@ _DECISIONS_GENERIC = (
     r"(\mif\M|\melse\M|\mswitch\M|\mcase\M|\mraise\M|\mthrow\M|\mvalidate|>=|<=|==|\mwhere\M)"
 )
 MAX_FACTS = 160
+# Code that schedules work or queues it, and the files that run an application in production.
+_SCHEDULING = (
+    r"(\$schedule->|beat_schedule|crontab\(|cron\.schedule|new CronJob|node-cron|add_job\(|"
+    r"BackgroundScheduler|ShouldQueue|onQueue\(|queue\.process|new Queue\(|@shared_task|@celery)"
+)
+_PIPELINE_PATH = (
+    r"(^|/)(\.github/workflows/[^/]+|\.gitlab-ci\.yml|Procfile|Jenkinsfile|supervisord[^/]*|"
+    r"crontab|\.circleci/config\.yml|azure-pipelines\.yml)$"
+)
 
 
 def _file_chunks(
@@ -248,16 +259,42 @@ def entities_context(
 def operations_context(conn: psycopg.Connection, app_id: int, facts: AppFacts) -> SectionContext:
     jcl = _chunks(conn, app_id, "c.kind IN ('job', 'step')", 30)
     build = _chunks(conn, app_id, _manifest_where(), 8, per_file=2)
+    scheduling = _chunks(conn, app_id, f"c.content ~ '{_SCHEDULING}'", 12, per_file=2)
+    pipelines = _chunks(conn, app_id, f"f.path ~* '{_PIPELINE_PATH}'", 8, per_file=2)
     lines = [*call_facts(facts, set(facts.jobs), set()), *data_facts(facts, set(facts.jobs), set())]
-    return SectionContext(_pack(_merge(jcl, build)), lines[:MAX_FACTS])
+    for unit in background_entries(facts.graph, set()):
+        where = _at(Loc(unit.path, unit.start))
+        lines.append(f"{unit.label} starts on its own (command, job or listener) {where}")
+    return SectionContext(_pack(_merge(jcl, build, scheduling, pipelines)), lines[:MAX_FACTS])
+
+
+def component_facts(facts: AppFacts) -> list[str]:
+    """Which classes call which, and which folders (layers) depend on which."""
+    found = components(facts)
+    if not found:
+        return []
+    links = component_links(facts, found)
+    out = [
+        f"Layer {a} calls layer {b} {n} time{'s' * (n > 1)}"
+        for (a, b), n in layer_links(facts, found).most_common(30)
+    ]
+    for key, comp in sorted(found.items(), key=lambda kv: (kv[1].path, kv[1].line)):
+        callees = ", ".join(found[k].name for k in sorted(links.calls[key])[:8])
+        where = _at(Loc(comp.path, comp.line))
+        out.append(
+            f"Component {comp.name} (layer {comp.layer}, {len(comp.units)} functions or methods) "
+            f"{where}" + (f" calls {callees}" if callees else "")
+        )
+    return out
 
 
 def structure_context(
     conn: psycopg.Connection, app_id: int, facts: AppFacts, base: SectionContext
 ) -> SectionContext:
-    headers = _chunks(conn, app_id, "c.kind IN ('program', 'job')", 25)
+    headers = _chunks(conn, app_id, "c.kind IN ('program', 'job', 'class')", 25)
     lines = [
         *base.facts,
+        *component_facts(facts),
         *call_facts(facts, None, None),
         *perform_facts(facts, None)[:40],
     ]

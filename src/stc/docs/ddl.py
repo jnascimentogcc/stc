@@ -135,5 +135,30 @@ def read_tables(conn: psycopg.Connection, app_id: int, paths: list[str]) -> list
             while len(lines) < int(start) - 1:
                 lines.append("")
             lines[int(start) - 1 :] = str(content).split("\n")
-        tables += parse_tables(path, "\n".join(lines))
-    return tables
+        text = "\n".join(lines)
+        tables += (
+            parse_tables(path, text) if path.lower().endswith(".sql") else parse_code(path, text)
+        )
+    return _merged(tables)
+
+
+def parse_code(path: str, text: str) -> list[Table]:
+    """The tables a migration or model file defines (not SQL: see `ddl_code`)."""
+    from stc.docs.ddl_code import parse_code_tables  # a function-level import: it needs this module
+
+    return parse_code_tables(path, text) or (
+        parse_tables(path, text) if re.search(r"(?i)\bCREATE\s+TABLE\b", text) else []
+    )
+
+
+def _merged(tables: list[Table]) -> list[Table]:
+    """One entry per table: when a migration and a model both define it, the fuller one stays."""
+    best: dict[str, Table] = {}
+    order: list[str] = []
+    for table in tables:
+        if table.name not in best:
+            order.append(table.name)
+            best[table.name] = table
+        elif len(table.columns) > len(best[table.name].columns):
+            best[table.name] = table
+    return [best[name] for name in order]
