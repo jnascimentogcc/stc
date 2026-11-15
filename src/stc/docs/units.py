@@ -221,8 +221,17 @@ _DJANGO_VIEW = re.compile(
 )
 
 
+_RESOURCE = re.compile(
+    r"""Route::(?:api)?[rR]esource\(\s*['"][^'"]*['"]\s*,\s*\\?(?:[\w\\]*\\)?(\w+)::class"""
+)  # Laravel: every method of the controller
+_DRF_REGISTER = re.compile(r"""\.register\(\s*r?['"][^'"]*['"]\s*,\s*(?:\w+\.)*(\w+)""")
+
+
 def handler_hint(text: str) -> tuple[str | None, str] | None:
-    """(class or object, method or function) a route registration names, if it names one."""
+    """(class or object, method or function) a route registration names, if it names one. A class
+    alone (a resource route, a DRF viewset) means every method of it."""
+    if m := _RESOURCE.search(text) or _DRF_REGISTER.search(text):
+        return None, m[1]
     if m := _LARAVEL_ARRAY.search(text):
         return m[1], m[2]
     if m := _AT_STRING.search(text):

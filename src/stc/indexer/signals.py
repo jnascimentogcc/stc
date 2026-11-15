@@ -18,7 +18,8 @@ from stc.indexer.manifests import is_manifest, manifest_signals
 from stc.indexer.signal_types import Signal
 
 EXTRACTOR_VERSION = (
-    5  # 5: tables read and defined by code in other languages (SQL strings, ORM, migrations);
+    6  # 6: route parameters are not calls; Symfony, Slim, DRF, Fastify and router prefixes;
+    # 5: tables read and defined by code in other languages (SQL strings, ORM, migrations);
     # 4: COBOL, copybook, JCL and DDL signals; 3: routes with a TS generic or the path on the
     # next line; 2: Spring ${property}, no tests
 )
@@ -152,8 +153,25 @@ def _provides(line: int, method: str, raw_path: str, *, properties: bool = False
 # --------------------------------------------------------------------------------------------
 
 _PY_ROUTE = re.compile(
-    r"""@[\w.]+\.(get|post|put|delete|patch|head|options|route|api_route)\(\s*[rRfF]?(['"])(/[^'"]*)\2"""
+    r"""@(?P<var>[\w.]+)\.(?P<verb>get|post|put|delete|patch|head|options|route|api_route)"""
+    r"""\(\s*[rRfF]?(?P<q>['"])(?P<path>/[^'"]*)(?P=q)"""
 )
+# `bp = Blueprint("x", __name__, url_prefix="/api")`, `router = APIRouter(prefix="/api")`
+_PY_PREFIX = re.compile(
+    r"""(\w+)\s*=\s*(?:\w+\.)*(?:Blueprint|APIRouter)\([^)]*?\bprefix\s*=\s*['"]([^'"]*)['"]"""
+    r"""|(\w+)\s*=\s*(?:\w+\.)*Blueprint\([^)]*?\burl_prefix\s*=\s*['"]([^'"]*)['"]"""
+)
+_DRF_REGISTER = re.compile(r"""\.register\(\s*r?['"]([\w\-/]+)['"]\s*,""")
+_FASTIFY_ROUTE = re.compile(
+    r"""method:\s*['"](GET|POST|PUT|DELETE|PATCH)['"]\s*,\s*(?:path|url):\s*['"`](/[^'"`]*)['"`]"""
+    r"""|(?:path|url):\s*['"`](/[^'"`]*)['"`]\s*,\s*method:\s*['"](GET|POST|PUT|DELETE|PATCH)['"]"""
+)
+_SYMFONY = re.compile(r"""(?:#\[|@)Route\(\s*(?:path:\s*)?['"]([^'"]*)['"]""")
+_SLIM = re.compile(
+    r"""\$\w+->(get|post|put|delete|patch|any)\(\s*['"](/[^'"]*)['"]"""
+)  # Slim, Lumen: `$app->get('/x', ...)`
+_LARAVEL_MATCH = re.compile(r"""Route::match\(\s*\[[^\]]*\]\s*,\s*['"]([^'"]*)['"]""")
+_LARAVEL_RESOURCE = re.compile(r"""Route::(?:api)?[rR]esource\(\s*['"]([\w\-./]+)['"]""")
 _DJANGO_PATH = re.compile(r"""\b(?:re_)?path\(\s*r?(['"])([^'"]*)\1""")
 _JS_ROUTE = re.compile(
     r"""\b(?:app|router|routes?|server|fastify|\w*Router|\w*router)\.(get|post|put|delete|patch|all)"""
@@ -206,18 +224,30 @@ def _endpoints(
         return _openapi(text, lines, language)
     prefix = ""
     controller = ""
+    router_prefixes: dict[str, str] = {}
     if language in ("javascript", "typescript"):
         # Over the whole text: the registration may span lines (a generic, then the path).
         for route in _JS_ROUTE.finditer(text):
             found.append(_provides(text.count("\n", 0, route.start()) + 1, route[1], route[3]))
+        for route in _FASTIFY_ROUTE.finditer(text):
+            verb, route_path = (route[1], route[2]) if route[1] else (route[4], route[3])
+            found.append(_provides(text.count("\n", 0, route.start()) + 1, verb, route_path))
+    elif language == "python":
+        for hit in _PY_PREFIX.finditer(text):
+            router_prefixes[hit[1] or hit[3]] = hit[2] if hit[1] else hit[4]
     for index, line in enumerate(lines):
         number = index + 1
         if language == "python":
             if m := _PY_ROUTE.search(line):
-                found.append(_provides(number, "ANY" if "route" in m[1] else m[1], m[3]))
+                base = router_prefixes.get(m["var"].split(".")[-1], "")
+                verb = "ANY" if "route" in m["verb"] else m["verb"]
+                found.append(_provides(number, verb, _join(base, m["path"])))
             if path.name.startswith("urls"):
                 for hit in _DJANGO_PATH.finditer(line):
                     found.append(_provides(number, "ANY", _django(hit[2])))
+                for hit in _DRF_REGISTER.finditer(line):
+                    found.append(_provides(number, "ANY", f"/{hit[1].strip('/')}"))
+                    found.append(_provides(number, "ANY", f"/{hit[1].strip('/')}/:id"))
         elif language in ("javascript", "typescript"):
             if m := _JS_CHAIN.search(line):
                 found.append(_provides(number, "ANY", m[2]))
@@ -250,9 +280,30 @@ def _endpoints(
             elif m := _RAILS_RES.search(line):
                 found.append(_provides(number, "ANY", f"/{m[1]}"))
                 found.append(_provides(number, "ANY", f"/{m[1]}/:id"))
-        elif language == "php" and (m := _LARAVEL.search(line)):
-            found.append(_provides(number, m[1], "/" + m[2].lstrip("/")))
+        elif language == "php":
+            prefix = _php_line(lines, index, number, prefix, found)
     return found
+
+
+def _php_line(lines: list[str], index: int, number: int, prefix: str, found: list[Signal]) -> str:
+    """Laravel, Slim/Lumen and Symfony. A Symfony `Route` right above a class is a prefix for the
+    routes below it. Returns the prefix in force."""
+    line = lines[index]
+    if m := _LARAVEL.search(line):
+        found.append(_provides(number, m[1], "/" + m[2].lstrip("/")))
+    elif m := _LARAVEL_MATCH.search(line):
+        found.append(_provides(number, "ANY", "/" + m[1].lstrip("/")))
+    elif m := _LARAVEL_RESOURCE.search(line):
+        base = "/" + m[1].strip("/")
+        found.append(_provides(number, "ANY", base))
+        found.append(_provides(number, "ANY", f"{base}/{{id}}"))
+    elif m := _SLIM.search(line):
+        found.append(_provides(number, m[1], m[2]))
+    elif m := _SYMFONY.search(line):
+        if _class_ahead(lines, index):
+            return m[1]
+        found.append(_provides(number, "ANY", _join(prefix, m[1])))
+    return prefix
 
 
 def _jvm_line(lines: list[str], index: int, number: int, language: str | None) -> list[Signal]:
@@ -319,7 +370,11 @@ def _openapi(text: str, lines: list[str], language: str | None) -> list[Signal]:
 # --------------------------------------------------------------------------------------------
 
 _URL = re.compile(r"""https?://[^\s'"`<>()\[\]\\,;]+""")
-_INTERPOLATED = re.compile(r"""(?:\$\{|\{\{?|%\()\s*([A-Za-z_][\w.]*)\s*[)}]\}?(/[\w\-./{}:$]+)""")
+# A variable that opens a string and is followed by a path (`${BASE}/x`, `f"{base}/x"`), not a path
+# parameter inside a path (`/invoices/{id}/pay`), which a route definition is full of.
+_INTERPOLATED = re.compile(
+    r"""(?:(?<=//)|(?<![\w/.\-$]))(?:\$\{|\{\{?|%\()\s*([A-Za-z_][\w.]*)\s*[)}]\}?(/[\w\-./{}:$]+)"""
+)
 _CLIENT_CALL = re.compile(
     r"""(?:\bfetch|\baxios(?:\.\w+)?|\$http(?:\.\w+)?|\bhttp\.(?:get|post|put|delete|patch)"""
     r"""|\bhttpClient\.\w+|\brequests\.(?:get|post|put|delete|patch)|\bclient\.(?:get|post|put|delete|patch)"""
