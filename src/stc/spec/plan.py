@@ -30,6 +30,7 @@ from stc.docs.plan import (
     _static,
     _table,
 )
+from stc.docs.screens import form_rules, navigation
 from stc.docs.store import Planner
 from stc.spec.stack import adapt_default_stack
 
@@ -37,6 +38,8 @@ PART_TITLES = {
     "spec-intent": "Purpose and scope",
     "spec-requirements": "Functional requirements",
     "spec-rules": "Business rules",
+    "spec-screens": "Screens and user interaction",
+    "spec-api": "API contract between frontend and backend",
     "spec-data": "Data",
     "spec-interfaces": "Interfaces",
     "spec-design": "Proposed design in the target stack",
@@ -46,15 +49,28 @@ PART_TITLES = {
     "spec-strategy": "Migration strategy",
 }
 # Parts that are written for the target technology get its description.
-_TARGETED = {"spec-data", "spec-interfaces", "spec-design", "spec-acceptance", "spec-tasks"}
+_TARGETED = {
+    "spec-data", "spec-interfaces", "spec-design", "spec-acceptance", "spec-tasks",
+    "spec-screens", "spec-api",
+}  # fmt: skip
+_UI_NOTE = (
+    "This feature has terminal screens that become a frontend. Cover the frontend (pages, "
+    "forms, validation, navigation) and the backend separately, and the API contract between "
+    "them; keep tasks for each side apart."
+)
+_UI_PARTS = {"spec-design", "spec-acceptance", "spec-tasks"}
 
 _DATA_LAYOUT = r"(\mPIC\M|\mPICTURE\M|\mCOMP(-[0-9])?\M|\mOCCURS\M|\mREDEFINES\M|\mFD\M)"
 MAX_FACTS = ctx.MAX_FACTS
 PROJECT_PAGE = "CLAUDE.md"
 
 
-def _part(part_id: str, context: SectionContext, stack: str, style: str = "paragraphs") -> Part:
+def _part(
+    part_id: str, context: SectionContext, stack: str, style: str = "paragraphs", ui: bool = False
+) -> Part:
     instructions = stack if part_id in _TARGETED else ""
+    if ui and part_id in _UI_PARTS:
+        instructions = f"{instructions}\n\n{_UI_NOTE}"
     return Part(part_id, PART_TITLES[part_id], context, style, instructions)  # type: ignore[arg-type]
 
 
@@ -186,7 +202,9 @@ def spec_contexts(
     )[:MAX_FACTS]
     rules = base["rules"]
     flow = base["flow"]
+    ui = _screen_contexts(conn, app_id, facts, feature, shared, data_lines, rules)
     return {
+        **ui,
         "spec-intent": base["summary"],
         "spec-requirements": flow,
         "spec-rules": SectionContext(
@@ -202,6 +220,35 @@ def spec_contexts(
         "spec-tasks": SectionContext(flow.items, shared[:60]),
         "spec-risks": SectionContext(_pack(ctx._merge(layout, rules.items, headers)), shared[:60]),
     }  # noqa: E501
+
+
+def _screen_contexts(
+    conn: psycopg.Connection,
+    app_id: int,
+    facts: AppFacts,
+    feature: Feature,
+    shared: list[str],
+    data_lines: list[str],
+    rules: SectionContext,
+) -> dict[str, SectionContext]:
+    """Evidence for the frontend: the screens, their fields, the validations of what the user
+    types and the data the feature saves. Empty for a feature with no screens."""
+    if not feature.screens:
+        return {}
+    lines = ctx.screen_facts(facts, feature.screens, feature.programs)
+    paths = list(dict.fromkeys(facts.screens[s].loc.path for s in feature.screens))
+    definitions = ctx._file_chunks(
+        conn, app_id, paths, regex=r"(SCREEN SECTION|DFHMDI|DFHMDF)", limit=20
+    )
+    saved = [line for line in data_lines if "writes" in line.lower() or "insert" in line.lower()]
+    return {
+        "spec-screens": SectionContext(
+            _pack(ctx._merge(definitions, rules.items)), (lines + shared)[:MAX_FACTS]
+        ),
+        "spec-api": SectionContext(
+            _pack(ctx._merge(definitions, rules.items)), (lines + saved + data_lines)[:MAX_FACTS]
+        ),
+    }
 
 
 # --------------------------------------------------------------------------------------------
@@ -250,6 +297,7 @@ def _feature_page(
             for pid in ("spec-intent", "spec-requirements", "spec-rules")
         ),  # fmt: skip
         _static(_section("Legacy flow", diagrams.feature_diagram(facts, feature))),
+        *_screen_blocks(facts, feature, c, stack),
         _part("spec-data", c["spec-data"], stack),
         _static(
             _section("Tables", _data_access_table(facts, programs, set(feature.units))),
@@ -267,13 +315,51 @@ def _feature_page(
                 else None,
             ),
         ),
-        _part("spec-design", c["spec-design"], stack),
-        _part("spec-acceptance", c["spec-acceptance"], stack),
-        _part("spec-tasks", c["spec-tasks"], stack, "steps"),
+        _part("spec-design", c["spec-design"], stack, ui=bool(feature.screens)),
+        _part("spec-acceptance", c["spec-acceptance"], stack, ui=bool(feature.screens)),
+        _part("spec-tasks", c["spec-tasks"], stack, "steps", ui=bool(feature.screens)),
         _part("spec-risks", c["spec-risks"], stack),
         _static(_section("Legacy code to read", _feature_code_table(facts, feature))),
     )
     return page
+
+
+def _form_table(facts: AppFacts, screens: list[str]) -> str | None:
+    """The form each screen becomes: field, input type and rules, from the PIC clauses."""
+    rows: list[list[str]] = []
+    for name in screens:
+        for f in facts.screens[name].fields:
+            kind, rules = form_rules(f)
+            rows.append(
+                [
+                    f"`{name}`",
+                    f"`{f.name}`",
+                    f.label or "",
+                    kind,
+                    rules,
+                    f"`{f.pic}`" if f.pic else "",
+                    f"`{f.loc}`",
+                ]
+            )
+    header = ["Screen", "Field", "Label", "Input", "Rules from the PIC", "PIC", "Evidence"]
+    return _table(header, rows) if rows else None
+
+
+def _screen_blocks(
+    facts: AppFacts, feature: Feature, c: dict[str, SectionContext], stack: str
+) -> list[Part | Static | None]:
+    if not feature.screens:
+        return []
+    steps = navigation(facts, feature.programs)
+    flow = diagrams.screen_flow_diagram(facts, feature.programs) if steps else None
+    return [
+        _part("spec-screens", c["spec-screens"], stack),
+        _static(
+            _section("Forms to build", _form_table(facts, feature.screens)),
+            _section("Screen flow", flow),
+        ),
+        _part("spec-api", c["spec-api"], stack),
+    ]
 
 
 def _shared_resources(facts: AppFacts, features: list[Feature]) -> str | None:
@@ -375,7 +461,11 @@ def build_spec_plan(
     facts = build_facts(conn, base.app_id, base.name)
     read_tables(conn, base.app_id, facts.ddl_files)  # fails early if the DDL cannot be read
     features, skipped = detect_features(facts, max_features)
-    stack = adapt_default_stack(stack, bool(facts.jobs) or any(f.kind == "task" for f in features))
+    stack = adapt_default_stack(
+        stack,
+        bool(facts.jobs) or any(f.kind == "task" for f in features),
+        any(f.screens for f in features),
+    )
     deps = dependencies(facts, features)
     ordered, cyclic = migration_order(features, deps)
     by_slug = {f.slug: f for f in features}

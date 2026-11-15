@@ -77,6 +77,15 @@ PART_TASKS = {
     "spec-interfaces": "Describe how the feature is triggered, what it consumes, what it "
     "produces, which other programs or applications it calls or is called by, and the contract a "
     "replacement must keep. Say how each becomes an interface of the target stack.",
+    "spec-screens": "Describe the user interaction this feature has on its terminal screens, for "
+    "a new frontend: for each screen what the user sees and fills in, the fields with their "
+    "format, size and whether they are required, the validations and the messages shown when "
+    "they fail, the keys or actions that move to another screen, and what is saved. Use the exact "
+    "values and messages in the code. One statement per screen behavior.",
+    "spec-api": "Define the contract between the frontend and the backend for this feature: the "
+    "REST operations the screens need (what each sends and receives, the validation errors it "
+    "returns, the tables it reads or writes), derived from what the legacy programs do when the "
+    "user confirms or navigates. One statement per operation.",
     "spec-design": "Propose how to build this feature in the target stack: components, entities, "
     "endpoints or events, transaction boundaries, and how the legacy steps map onto them. One "
     "statement per design decision, each citing the legacy code it replaces.",

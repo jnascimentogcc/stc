@@ -12,16 +12,25 @@ Persistence: JPA, on a PostgreSQL database.
 API: REST, asynchronous.
 Batch work becomes asynchronous services started on demand or on a schedule."""
 
+FRONTEND_LINES = (
+    "\nFrontend: Angular (standalone components, signals, reactive forms), calling the REST API."
+    "\nEach legacy screen becomes a routed page; each screen field becomes a typed, validated "
+    "form control; the navigation between screens becomes routes."
+)
+
 MAX_STACK_CHARS = 4000
 _BATCH_LINE = "\nBatch work becomes asynchronous services started on demand or on a schedule."
 
 
-def adapt_default_stack(stack: str, has_batch: bool) -> str:
+def adapt_default_stack(stack: str, has_batch: bool, has_screens: bool = False) -> str:
     """The default stack mentions batch work; an application with none (a web application) does
-    not need that line. A stack the person wrote is never changed."""
-    if stack == DEFAULT_STACK and not has_batch:
-        return stack.replace(_BATCH_LINE, "")
-    return stack
+    not need that line, and one with terminal screens needs a frontend. A stack the person wrote
+    is never changed."""
+    if stack != DEFAULT_STACK:
+        return stack
+    if not has_batch:
+        stack = stack.replace(_BATCH_LINE, "")
+    return stack + FRONTEND_LINES if has_screens else stack
 
 
 class StackError(Exception):

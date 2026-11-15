@@ -1,0 +1,7 @@
+Language and runtime: Java 21.
+Framework: Spring Boot 3, Spring Web, Spring Data JPA and Bean Validation.
+Persistence: PostgreSQL, with Flyway migrations.
+API: REST with JSON, documented with OpenAPI; validation errors returned as problem details.
+Frontend: Angular (standalone components, signals, reactive forms) calling the REST API.
+Each legacy screen becomes a routed page; each screen field becomes a typed, validated form control; the navigation between screens becomes routes.
+Tests: JUnit 5 and Testcontainers for the backend; Vitest for the frontend.
