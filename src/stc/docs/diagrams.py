@@ -21,6 +21,7 @@ from stc.docs.components import (
 from stc.docs.ddl import Table
 from stc.docs.facts import WRITES, AppFacts, Owner
 from stc.docs.features import Feature
+from stc.docs.screens import navigation
 
 MAX_NODES = 40
 MAX_LABEL = 48
@@ -171,6 +172,31 @@ def _add_data(
                 flow.edge(d, runner, "reads", "dotted")
 
 
+def _add_screens(flow: Flow, facts: AppFacts, programs: set[str]) -> None:
+    """The screens the programs show (program to screen) and read (screen to program)."""
+    for use in facts.screen_uses:
+        if use.owner.kind != "program" or use.owner.name not in programs:
+            continue
+        if use.screen not in facts.screens:
+            continue
+        program = _program_node(flow, facts, use.owner.name)
+        screen = flow.node(f"screen:{use.screen}", use.screen, "round")
+        if use.action in ("ACCEPT", "RECEIVE MAP"):
+            flow.edge(screen, program, "input", "dotted")
+        else:
+            flow.edge(program, screen, "shows")
+
+
+def screen_flow_diagram(facts: AppFacts, programs: list[str] | None = None) -> str | None:
+    """The screens as nodes and the steps the user takes between them."""
+    flow = Flow("LR")
+    for step in navigation(facts, programs):
+        a = flow.node(f"screen:{step.source}", step.source, "round")
+        b = flow.node(f"screen:{step.target}", step.target, "round")
+        flow.edge(a, b, f"{step.program} calls {step.callee}")
+    return _fenced(flow, "screens")
+
+
 def _add_unit_data(flow: Flow, facts: AppFacts, units: set[str]) -> None:
     """The tables the functions and methods of a feature read and write."""
     grouped: dict[tuple[str, str], list[str]] = defaultdict(list)
@@ -274,6 +300,7 @@ def feature_diagram(facts: AppFacts, feature: Feature) -> str | None:
             for program in feature.programs:
                 _program_node(flow, facts, program)
         _add_data(flow, facts, by_step, jobs, programs)
+        _add_screens(flow, facts, programs)
         return _fenced(flow, "components")
     graph = facts.graph
     entry = graph.label(feature.entry) if feature.kind == "task" else feature.entry

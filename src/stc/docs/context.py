@@ -17,6 +17,7 @@ from stc.catalog.context import (
 from stc.docs.components import component_links, components, layer_links
 from stc.docs.facts import WRITES, AppFacts, Loc
 from stc.docs.features import Feature
+from stc.docs.screens import navigation, validation_variables
 from stc.docs.units import background_entries
 
 _STATUS = "f.status IN ('indexed', 'unsupported')"
@@ -154,9 +155,45 @@ def perform_facts(facts: AppFacts, programs: set[str] | None) -> list[str]:
     ]
 
 
+def screen_facts(facts: AppFacts, screens: list[str], programs: list[str]) -> list[str]:
+    """The screens a feature shows, their fields, who shows them and where the user goes next."""
+    out: list[str] = []
+    for name in screens:
+        screen = facts.screens[name]
+        where = f" in mapset {screen.mapset}" if screen.mapset else ""
+        out.append(f"Screen {name}{where} is defined {_at(screen.loc)}")
+        for f in screen.fields:
+            parts = [f.mode]
+            if f.label:
+                parts.append(f"label '{f.label}'")
+            if f.pic:
+                parts.append(f"PIC {f.pic}")
+            if f.length:
+                parts.append(f"length {f.length}")
+            if f.var:
+                parts.append(f"program variable {f.var}")
+            parts += list(f.flags)
+            out.append(
+                f"Field {f.name} of screen {name} ({', '.join(parts)}) is defined {_at(f.loc)}"
+            )
+    for use in facts.screen_uses:
+        if use.owner.name in programs and use.screen in screens:
+            out.append(
+                f"Program {use.owner.name} does {use.action} of screen {use.screen} {_at(use.loc)}"
+            )
+    out += [
+        f"From screen {step.source} the user goes to screen {step.target} when "
+        f"{step.program} calls {step.callee}"
+        for step in navigation(facts, programs)
+        if step.source in screens
+    ]
+    return out
+
+
 def feature_facts(facts: AppFacts, feature: Feature) -> list[str]:
     jobs, programs = set(feature.jobs), set(feature.programs)
     out = [
+        *screen_facts(facts, feature.screens, feature.programs),
         *call_facts(facts, jobs, programs),
         *unit_facts(facts, set(feature.units)),
         *data_facts(facts, jobs, programs, set(feature.units)),
@@ -230,6 +267,11 @@ def feature_contexts(
         conn, app_id, paths,
         regex=_DECISIONS_MAINFRAME if mainframe else _DECISIONS_GENERIC, limit=60,
     )  # fmt: skip
+    if feature.screens:  # the validations of what the user types, found by the variables
+        names = validation_variables(facts, feature.screens)
+        if names:
+            checks = rf"(IF|EVALUATE|WHEN)[^.]*\m({'|'.join(names)})\M"
+            rules = _merge(_file_chunks(conn, app_id, paths, regex=checks, limit=40), rules)
     if focus:  # the decisions of the code the feature runs, not of its neighbours in the files
         in_focus = {i.label for i in focus}
         rules = [r for r in rules if r.label in in_focus] or rules

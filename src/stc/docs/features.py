@@ -12,6 +12,7 @@ from collections import defaultdict, deque
 from dataclasses import dataclass, field
 
 from stc.docs.facts import AppFacts, Endpoint, Loc, Topic, slugify
+from stc.docs.screens import screens_used_by
 from stc.docs.units import background_entries
 
 
@@ -29,6 +30,7 @@ class Feature:
     topics: list[Topic] = field(default_factory=list)
     units: list[str] = field(default_factory=list)  # functions/methods reached, entries first
     handlers: dict[str, list[str]] = field(default_factory=dict)  # endpoint -> handler units
+    screens: list[str] = field(default_factory=list)  # screens the programs show or read
 
     @property
     def size(self) -> int:
@@ -38,6 +40,7 @@ class Feature:
             + len(self.units)
             + len(self.endpoints)
             + len(self.topics)
+            + len(self.screens)
         )
 
 
@@ -167,6 +170,12 @@ def detect_features(facts: AppFacts, limit: int) -> tuple[list[Feature], list[Fe
                 files=[path], topics=topics[path],
             )
         )  # fmt: skip
+
+    for feature in found:
+        if feature.programs:
+            feature.screens = screens_used_by(facts, feature.programs)
+            defined = [facts.screens[s].loc.path for s in feature.screens]
+            feature.files = list(dict.fromkeys([*feature.files, *defined]))
 
     found.sort(key=lambda f: (-f.size, f.title))
     taken: set[str] = set()

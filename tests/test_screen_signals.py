@@ -157,3 +157,10 @@ def test_clause_words_inside_a_field_name_are_not_clauses() -> None:
     found = {s.key: parse_field_detail(s.detail) for s in signals(text) if s.kind == "screen_field"}
     assert found["TRANSFER-SCREEN.SC-FROM"]["var"] == "WS-AMT"
     assert found["TRANSFER-SCREEN.SC-FROM"]["mode"] == "input"
+
+
+def test_a_field_cites_its_own_lines() -> None:
+    cobol = {s.key: s.start_line for s in signals(COBOL) if s.kind == "screen_field"}
+    assert cobol["TRANSFER-SCREEN.SC-FROM"] == 13 and cobol["TRANSFER-SCREEN.SC-AMT"] == 15
+    bms = {s.key: s.start_line for s in signals(BMS, "bms", "a.bms") if s.kind == "screen_field"}
+    assert bms["TLRM1.ACCT"] == 5 and bms["TLRM1.MSG"] == 7

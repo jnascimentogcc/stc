@@ -11,6 +11,7 @@ from stc.catalog.context import AppContext, SectionContext, build_context
 from stc.catalog.store import _cell
 from stc.docs import context as ctx
 from stc.docs import diagrams
+from stc.docs import screens as screen_info
 from stc.docs.components import (
     component_links,
     components,
@@ -257,6 +258,54 @@ _KIND_INTRO = {
 }
 
 
+def _screens_table(facts: AppFacts, screens: list[str] | None = None) -> str | None:
+    """Every field of the screens, with what the code says about it."""
+    rows: list[list[str]] = []
+    for name in sorted(facts.screens) if screens is None else screens:
+        screen = facts.screens.get(name)
+        for f in screen.fields if screen else []:
+            at = f"{f.row},{f.col}" if f.row is not None and f.col is not None else ""
+            rows.append(
+                [
+                    f"`{name}`",
+                    f"`{f.name}`",
+                    f.label or "",
+                    f.mode,
+                    f"`{f.pic}`" if f.pic else (f"length {f.length}" if f.length else ""),
+                    f"`{f.var}`" if f.var else "",
+                    ", ".join(f.flags),
+                    at,
+                    f"`{f.loc}`",
+                ]
+            )
+    header = [
+        "Screen",
+        "Field",
+        "Label",
+        "Mode",
+        "Format",
+        "Variable",
+        "Flags",
+        "Row,col",
+        "Evidence",
+    ]
+    return _table(header, rows) if rows else None
+
+
+def _screens_summary(facts: AppFacts) -> str | None:
+    rows = [
+        [
+            f"`{s.name}`",
+            f"`{s.mapset}`" if s.mapset else "",
+            str(len(s.fields)),
+            ", ".join(f"`{p}`" for p in screen_info.programs_of(facts, s.name)),
+            f"`{s.loc}`",
+        ]
+        for s in sorted(facts.screens.values(), key=lambda s: s.name)
+    ]
+    return _table(["Screen", "Mapset", "Fields", "Used by", "Defined at"], rows) if rows else None
+
+
 def _features_intro(features: list[Feature]) -> str:
     kinds = [k for k in _KIND_INTRO if any(f.kind == k for f in features)]
     what = ", ".join(_KIND_INTRO[k] for k in kinds[:-1])
@@ -491,6 +540,12 @@ def _feature_page(conn: psycopg.Connection, app_id: int, facts: AppFacts, featur
         _part("flow", contexts["flow"], "steps"),
         _part("rules", contexts["rules"]),
         _static(
+            _section("Screens", _screens_table(facts, feature.screens))
+            if feature.screens
+            else None,
+            _section("Screen flow", diagrams.screen_flow_diagram(facts, feature.programs))
+            if feature.screens
+            else None,
             _section("Code involved", _feature_code_table(facts, feature)),
             _section("Batch steps", _jobs_table(facts, feature.jobs)) if feature.jobs else None,
             _section("Tables", _data_access_table(facts, programs, set(feature.units))),
@@ -542,6 +597,8 @@ def _interface_sections(facts: AppFacts) -> list[str | None]:
             else None,  # noqa: E501
         ),
         _section("Dynamic calls (target known only at run time)", dynamic),
+        _section("Screens", _screens_summary(facts)),
+        _section("Screen flow", diagrams.screen_flow_diagram(facts)),
         _section("Exposed endpoints", _endpoints_table(facts)),
         _section("Outgoing HTTP calls", consumed),
         _section("Messaging", topics),

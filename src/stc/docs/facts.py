@@ -14,6 +14,7 @@ from pathlib import PurePosixPath
 import psycopg
 
 from stc.docs import units as code_units
+from stc.indexer.screen_signals import parse_field_detail
 from stc.indexer.signals import is_test_path
 
 _STATUS = "f.status IN ('indexed', 'unsupported')"
@@ -113,6 +114,42 @@ class Topic:
 
 
 @dataclass
+class ScreenField:
+    name: str
+    mode: str  # input | output
+    pic: str | None
+    length: int | None
+    row: int | None
+    col: int | None
+    label: str | None
+    var: str | None
+    flags: tuple[str, ...]
+    loc: Loc
+
+
+@dataclass
+class Screen:
+    """A `SCREEN SECTION` screen or a BMS map, with the fields the code defines for it."""
+
+    name: str
+    loc: Loc
+    mapset: str | None = None
+    fields: list[ScreenField] = field(default_factory=list)
+
+    @property
+    def variables(self) -> list[str]:
+        return [f.var for f in self.fields if f.var]
+
+
+@dataclass(frozen=True)
+class ScreenUse:
+    owner: Owner
+    screen: str  # `?NAME` when the map is chosen at run time
+    action: str  # DISPLAY | ACCEPT | SEND MAP | RECEIVE MAP
+    loc: Loc
+
+
+@dataclass
 class AppFacts:
     name: str
     path: str
@@ -146,6 +183,8 @@ class AppFacts:
     handlers: dict[str, list[str]] = field(default_factory=dict)
     # table -> the files that define it (DDL, migrations, models)
     table_files: dict[str, list[str]] = field(default_factory=dict)
+    screens: dict[str, Screen] = field(default_factory=dict)  # name -> screen (COBOL terminals)
+    screen_uses: list[ScreenUse] = field(default_factory=list)
 
     @property
     def is_mainframe(self) -> bool:
@@ -174,6 +213,43 @@ def _owner_of(
         before = [name for start, name in found if start <= line]
         return Owner("program", before[-1] if before else found[0][1])
     return None
+
+
+def _screen_action(detail: str) -> str:
+    """`CICS SEND MAP X` -> `SEND MAP`; `DISPLAY screen X` -> `DISPLAY`."""
+    parts = detail.upper().split()
+    if parts and parts[0] == "DYNAMIC":
+        parts = parts[1:]
+    if parts and parts[0] == "CICS":
+        return " ".join(parts[1:3])
+    return parts[0] if parts else "USE"
+
+
+def _attach_screen_fields(facts: AppFacts, found: list[tuple[str, str, Loc]]) -> None:
+    for key, detail, loc in found:
+        screen_name, _, name = key.partition(".")
+        screen = facts.screens.get(screen_name)
+        if screen is None or not name:
+            continue
+        parsed = parse_field_detail(detail)
+        at = parsed.get("at", "").split(",")
+        length = parsed.get("len", "")
+        screen.fields.append(
+            ScreenField(
+                name,
+                parsed.get("mode", "input"),
+                parsed.get("pic"),
+                int(length) if length.isdigit() else None,
+                int(at[0]) if len(at) == 2 and at[0].isdigit() else None,
+                int(at[1]) if len(at) == 2 and at[1].isdigit() else None,
+                parsed.get("label"),
+                parsed.get("var"),
+                tuple(f for f in ("required", "secure", "numeric") if f in parsed),
+                loc,
+            )
+        )
+    for screen in facts.screens.values():
+        screen.fields.sort(key=lambda f: (f.row or 0, f.col or 0, f.name))
 
 
 def _label(detail: str) -> str:
@@ -268,6 +344,7 @@ def build_facts(conn: psycopg.Connection, app_id: int, name: str) -> AppFacts:
         source = min(enclosing, key=lambda s: s.end - s.start).name if enclosing else None
         facts.performs.append(Perform(program, source, target, Loc(path, line)))
 
+    screen_fields: list[tuple[str, str, Loc]] = []
     models: dict[str, tuple[str, str]] = {}  # class -> (table, file that maps it)
     in_code: list[tuple[str, int, str, str]] = []  # table uses outside COBOL: path, line, ...
     for kind, role, key, detail, path, line in signals:
@@ -294,6 +371,16 @@ def build_facts(conn: psycopg.Connection, app_id: int, name: str) -> AppFacts:
                 facts.tables.append(TableUse(owner, key, _label(detail), loc))
             else:
                 in_code.append((path, line, key, detail))
+        elif kind == "screen" and role == "provides":
+            name = key
+            mapset = re.search(r"mapset (\S+?);", detail)
+            facts.screens.setdefault(name, Screen(name, loc, mapset.group(1) if mapset else None))
+        elif kind == "screen":
+            owner = _owner_of(path, line, programs_in, job_in, steps_in)
+            if owner is not None:
+                facts.screen_uses.append(ScreenUse(owner, key, _screen_action(detail), loc))
+        elif kind == "screen_field":
+            screen_fields.append((key, detail, loc))
         elif kind == "dataset":
             owner = _owner_of(path, line, programs_in, job_in, steps_in)
             if owner is not None:
@@ -314,6 +401,7 @@ def build_facts(conn: psycopg.Connection, app_id: int, name: str) -> AppFacts:
         elif kind == "database" and key not in facts.databases:
             facts.databases.append(key)
 
+    _attach_screen_fields(facts, screen_fields)
     _link_handlers(conn, app_id, facts)
     _unit_table_uses(conn, app_id, facts, models, in_code)
 

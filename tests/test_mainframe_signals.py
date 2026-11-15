@@ -168,7 +168,7 @@ def test_mainframe_files_are_wanted_and_tests_are_skipped() -> None:
 
 
 def test_extractor_version_was_bumped() -> None:
-    assert EXTRACTOR_VERSION == 7
+    assert EXTRACTOR_VERSION == 8
 
 
 def test_a_data_name_starting_with_exec_keeps_the_sql_signals_after_it() -> None:

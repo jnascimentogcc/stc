@@ -58,6 +58,8 @@ class ScreenField:
     label: str | None = None
     var: str | None = None
     flags: list[str] = field(default_factory=list)
+    first: int = 0  # the lines of the field in the file, when known
+    last: int = 0
 
 
 def field_detail(f: ScreenField) -> str:
@@ -109,7 +111,14 @@ def _screen_signals(
     ]
     for f in fields:
         found.append(
-            _signal("screen_field", "provides", f"{name}.{f.name}", field_detail(f), first, last)
+            _signal(
+                "screen_field",
+                "provides",
+                f"{name}.{f.name}",
+                field_detail(f),
+                f.first or first,
+                f.last or last,
+            )
         )
     return found
 
@@ -227,6 +236,8 @@ def _screen_section(
             first, row, labels = start, None, {}
         elif name:
             item, label, row = _item(text, row)
+            if item is not None:
+                item.first, item.last = start, end
             if label is not None and row is not None:
                 labels[row] = label
             if item is not None:
@@ -267,7 +278,18 @@ def _positioned_console(source: list[SourceLine]) -> list[Signal]:
                 labels[row] = text
         elif accept := _ACCEPT_AT.search(masked):
             var = accept.group(1).upper()
-            fields.append(ScreenField(var, "input", row, col, label=labels.get(row), var=var))
+            fields.append(
+                ScreenField(
+                    var,
+                    "input",
+                    row,
+                    col,
+                    label=labels.get(row),
+                    var=var,
+                    first=line.number,
+                    last=line.number,
+                )
+            )
         else:
             continue
         first = first or line.number
@@ -277,7 +299,7 @@ def _positioned_console(source: list[SourceLine]) -> list[Signal]:
     detail = f"screen {program}; {len(fields)} fields; positioned console"
     found = [_signal("screen", "provides", program, detail, first, last)]
     found += [
-        _signal("screen_field", "provides", f"{program}.{f.name}", field_detail(f), first, last)
+        _signal("screen_field", "provides", f"{program}.{f.name}", field_detail(f), f.first, f.last)
         for f in fields
     ]
     found.append(_signal("screen", "consumes", program, f"ACCEPT screen {program}", first, last))
@@ -425,6 +447,8 @@ def bms_screens(lines: list[str]) -> list[Signal]:
                         labels.get(row) if row is not None else None,
                         None,
                         flags,
+                        first,
+                        end,
                     )
                 )
         last = end
