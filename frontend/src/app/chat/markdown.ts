@@ -10,9 +10,11 @@ import {
   untracked,
 } from '@angular/core';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
+import { TranslocoService } from '@jsverse/transloco';
 import DOMPurify from 'dompurify';
 import { marked } from 'marked';
 import { Citation } from '../api/models';
+import { copyCodeFromClick, decorateCodeBlocks } from '../ui/code-block';
 import { Highlighter, languageForFence } from './highlight';
 
 // Links in an answer open in a new tab without access to this page (ui-spec §12).
@@ -100,6 +102,7 @@ export class MarkdownComponent {
   private readonly sanitizer = inject(DomSanitizer);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly highlighter = inject(Highlighter);
+  private readonly transloco = inject(TranslocoService);
 
   readonly source = input.required<string>();
   /** The sources of the answer: references to them in the text become links. */
@@ -125,10 +128,16 @@ export class MarkdownComponent {
 
   private async highlightBlocks(): Promise<void> {
     await Promise.resolve(); // let the new HTML reach the DOM first
-    await highlightCodeBlocks(this.host.nativeElement, this.highlighter);
+    const root = this.host.nativeElement;
+    await highlightCodeBlocks(root, this.highlighter);
+    decorateCodeBlocks(root, {
+      copy: this.transloco.translate('code.copy'),
+      copied: this.transloco.translate('code.copied'),
+    });
   }
 
   protected onActivate(event: Event): void {
+    if (copyCodeFromClick(event)) return;
     this.open(event.target);
   }
 

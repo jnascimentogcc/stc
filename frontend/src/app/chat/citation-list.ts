@@ -65,7 +65,7 @@ interface Opened {
           @for (citation of citations(); track citation.ref) {
             @if (isOpen(citation)) {
               <div
-                class="mt-2 overflow-hidden rounded-md border border-border bg-surface-2"
+                class="mt-2 overflow-hidden rounded-lg border border-code-border bg-code text-code-fg"
                 role="region"
                 tabindex="-1"
                 [attr.data-ref]="citation.ref"
@@ -73,14 +73,16 @@ interface Opened {
               >
                 @switch (opened()[citation.ref]?.state) {
                   @case ('loading') {
-                    <p class="p-3 text-text-3">{{ t('chat.loadingCode') }}</p>
+                    <p class="p-3 text-code-muted">{{ t('chat.loadingCode') }}</p>
                   }
                   @case ('error') {
-                    <p class="p-3 text-danger" role="alert">{{ opened()[citation.ref]?.error }}</p>
+                    <p class="p-3 text-code-danger" role="alert">
+                      {{ opened()[citation.ref]?.error }}
+                    </p>
                   }
                   @case ('ready') {
                     <div
-                      class="flex flex-wrap items-center gap-2 border-b border-border px-3 py-1.5 text-xs text-text-3"
+                      class="flex flex-wrap items-center gap-2 border-b border-code-border px-3 py-1.5 text-xs text-code-muted"
                     >
                       <span class="font-mono">{{ citation.ref }}</span>
                       @if (opened()[citation.ref]?.slice?.source?.code_version; as version) {
@@ -88,7 +90,7 @@ interface Opened {
                         <span class="font-mono">{{ version.slice(0, 7) }}</span>
                       }
                       @if (opened()[citation.ref]?.slice?.stale) {
-                        <span class="text-warning">{{ t('chat.fileChanged') }}</span>
+                        <span class="text-code-warning">{{ t('chat.fileChanged') }}</span>
                       }
                     </div>
                     <div
@@ -98,9 +100,10 @@ interface Opened {
                     >
                       @for (line of opened()[citation.ref]?.lines; track line.number) {
                         <div class="whitespace-pre">
-                          <span class="mr-3 inline-block w-8 select-none text-right text-text-3">{{
-                            line.number
-                          }}</span>
+                          <span
+                            class="mr-3 inline-block w-8 select-none text-right text-code-muted"
+                            >{{ line.number }}</span
+                          >
                           @for (token of line.tokens; track $index) {
                             <span
                               [style.color]="token.color"

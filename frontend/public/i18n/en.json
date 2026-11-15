@@ -89,6 +89,13 @@
     "missing": "This application has no documentation yet. Generate it with:",
     "diagram": "Diagram",
     "diagramFailed": "The diagram could not be drawn; its source is shown instead.",
-    "closeCode": "Close the code"
+    "closeCode": "Close the code",
+    "menu": "Pages",
+    "closeMenu": "Close",
+    "breadcrumbs": "Breadcrumbs"
+  },
+  "code": {
+    "copy": "Copy",
+    "copied": "Copied"
   }
 }

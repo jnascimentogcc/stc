@@ -29,13 +29,13 @@ interface Line {
   template: `
     <ng-container *transloco="let t">
       <section
-        class="overflow-hidden rounded-md border border-border-2 bg-surface-2 shadow-md"
+        class="overflow-hidden rounded-lg border border-code-border bg-code text-code-fg shadow-md"
         [attr.aria-label]="citation().ref"
       >
         <div
-          class="flex flex-wrap items-center gap-2 border-b border-border px-3 py-1.5 text-xs text-text-3"
+          class="flex flex-wrap items-center gap-2 border-b border-code-border px-3 py-1.5 text-xs text-code-muted"
         >
-          <span class="font-mono text-foreground"
+          <span class="font-mono text-code-fg"
             >{{ citation().application }}/{{ citation().ref }}</span
           >
           @if (slice()?.source?.code_version; as version) {
@@ -43,11 +43,11 @@ interface Line {
             <span class="font-mono">{{ version.slice(0, 7) }}</span>
           }
           @if (slice()?.stale) {
-            <span class="text-warning">{{ t('chat.fileChanged') }}</span>
+            <span class="text-code-warning">{{ t('chat.fileChanged') }}</span>
           }
           <button
             type="button"
-            class="ml-auto inline-flex size-8 items-center justify-center rounded-md hover:bg-accent-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+            class="ml-auto inline-flex size-8 items-center justify-center rounded-md hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-code-fg"
             [attr.aria-label]="t('docs.closeCode')"
             (click)="closed.emit()"
           >
@@ -55,9 +55,9 @@ interface Line {
           </button>
         </div>
         @if (error(); as message) {
-          <p class="p-3 text-danger" role="alert">{{ message }}</p>
+          <p class="p-3 text-code-danger" role="alert">{{ message }}</p>
         } @else if (lines().length === 0) {
-          <p class="p-3 text-text-3" role="status">{{ t('chat.loadingCode') }}</p>
+          <p class="p-3 text-code-muted" role="status">{{ t('chat.loadingCode') }}</p>
         } @else {
           <div
             class="max-h-[40vh] overflow-auto p-3 font-mono text-xs leading-relaxed"
@@ -66,7 +66,7 @@ interface Line {
           >
             @for (line of lines(); track line.number) {
               <div class="whitespace-pre">
-                <span class="mr-3 inline-block w-8 select-none text-right text-text-3">{{
+                <span class="mr-3 inline-block w-8 select-none text-right text-code-muted">{{
                   line.number
                 }}</span>
                 @for (token of line.tokens; track $index) {

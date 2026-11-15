@@ -13,6 +13,7 @@ import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { TranslocoService } from '@jsverse/transloco';
 import { Highlighter } from '../chat/highlight';
 import { highlightCodeBlocks } from '../chat/markdown';
+import { copyCodeFromClick, decorateCodeBlocks } from '../ui/code-block';
 import { DiagramRenderer } from './diagram';
 import { DocCitation } from './docs-models';
 
@@ -65,6 +66,10 @@ export class DocContentComponent {
     await Promise.resolve(); // let the new HTML reach the DOM first
     const root = this.host.nativeElement;
     await highlightCodeBlocks(root, this.highlighter);
+    decorateCodeBlocks(root, {
+      copy: this.transloco.translate('code.copy'),
+      copied: this.transloco.translate('code.copied'),
+    });
     for (const figure of Array.from(root.querySelectorAll<HTMLElement>('figure.diagram'))) {
       const source = figure.dataset['diagram'];
       if (!source || !figure.isConnected) continue;
@@ -86,6 +91,7 @@ export class DocContentComponent {
   }
 
   protected onClick(event: MouseEvent): void {
+    if (copyCodeFromClick(event)) return;
     const target = event.target as HTMLElement | null;
     const link = target?.closest<HTMLAnchorElement>('a[data-doc-path]');
     if (link && !event.ctrlKey && !event.metaKey && !event.shiftKey && event.button === 0) {

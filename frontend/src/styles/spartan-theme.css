@@ -16,6 +16,7 @@
   --color-popover: var(--surface);
   --color-popover-foreground: var(--text);
   --color-primary: var(--accent);
+  --color-primary-hover: var(--accent-hover);
   --color-primary-foreground: var(--text-inverse);
   --color-secondary: var(--surface-2);
   --color-secondary-foreground: var(--text);
@@ -45,12 +46,21 @@
   --color-info-bg: var(--info-bg);
   --color-info-border: var(--info-border);
   --color-accent-soft-2: var(--accent-soft-2);
+  --color-sidebar: var(--sidebar);
+  --color-deprecated: var(--deprecated);
+  --color-code: var(--code-bg);
+  --color-code-fg: var(--code-fg);
+  --color-code-border: var(--code-border);
+  --color-code-muted: var(--code-muted);
+  --color-code-warning: var(--code-warning);
+  --color-code-danger: var(--code-danger);
 
   --font-sans: var(--sans);
   --font-mono: var(--mono);
 
   --radius-sm: var(--radius-sm);
   --radius-md: var(--radius);
+  --radius-input: var(--radius-input);
   --radius-lg: var(--radius-lg);
   --radius-xl: var(--radius-xl);
 }

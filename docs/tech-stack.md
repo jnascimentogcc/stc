@@ -105,7 +105,7 @@ Follows `docs/ui-spec.md`; this table only fixes the libraries.
 | Components | **SpartanNG** (`brain` and `helm`, on top of `@angular/cdk`) |
 | Icons | **ng-icons** with **Lucide** |
 | i18n | **Transloco** (`public/i18n/en.json` as the default locale; further locales optional) |
-| Typography | **DM Sans** and **IBM Plex Mono** (`@fontsource`) |
+| Typography | **Inter** (variable) and **JetBrains Mono** (`@fontsource`, self-hosted) |
 | Answer markdown | **marked** + **DOMPurify** (HTML always sanitized) |
 | Code in citations | **Shiki** (syntax highlighting) |
 | Streaming | **SSE** with `fetch` and `ReadableStream` |

@@ -1,5 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { Citation } from '../api/models';
+import { provideTestTransloco } from '../testing';
 import { MarkdownComponent, linkReferences, renderMarkdown } from './markdown';
 
 describe('renderMarkdown', () => {
@@ -66,6 +67,8 @@ describe('linkReferences', () => {
 });
 
 describe('MarkdownComponent', () => {
+  beforeEach(() => TestBed.configureTestingModule({ providers: [provideTestTransloco()] }));
+
   function render(source: string, citations: Citation[], highlight = false) {
     const fixture = TestBed.createComponent(MarkdownComponent);
     fixture.componentRef.setInput('source', source);
@@ -114,5 +117,34 @@ describe('MarkdownComponent', () => {
     await fixture.whenStable();
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(root.querySelector('pre code span')).toBeNull();
+  });
+});
+
+describe('code blocks', () => {
+  it('wraps fenced code with its language and a copy button, once', async () => {
+    const { decorateCodeBlocks } = await import('../ui/code-block');
+    const root = document.createElement('div');
+    root.innerHTML = '<pre><code class="language-python">print(1)</code></pre>';
+    decorateCodeBlocks(root, { copy: 'Copy', copied: 'Copied' });
+    decorateCodeBlocks(root, { copy: 'Copy', copied: 'Copied' });
+    expect(root.querySelectorAll('.code-block')).toHaveLength(1);
+    expect(root.querySelector('.code-block-lang')?.textContent).toBe('python');
+    expect(root.querySelector('button.code-block-copy')?.textContent).toBe('Copy');
+  });
+
+  it('leaves diagrams alone and copies the code of the block', async () => {
+    const { decorateCodeBlocks, copyCodeFromClick } = await import('../ui/code-block');
+    const root = document.createElement('div');
+    root.innerHTML =
+      '<figure class="diagram"><pre><code>graph</code></pre></figure><pre><code>a = 1</code></pre>';
+    decorateCodeBlocks(root, { copy: 'Copy', copied: 'Copied' });
+    expect(root.querySelectorAll('.code-block')).toHaveLength(1);
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    const button = root.querySelector<HTMLButtonElement>('button.code-block-copy')!;
+    const event = new MouseEvent('click', { bubbles: true });
+    root.addEventListener('click', (e) => copyCodeFromClick(e));
+    button.dispatchEvent(event);
+    expect(writeText).toHaveBeenCalledWith('a = 1');
   });
 });

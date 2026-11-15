@@ -6,6 +6,8 @@ This document is the normative source for the design system and the global user-
 
 The pages, flows, data, permissions and business rules of each feature must be defined in separate feature specs. In case of conflict, this SPEC prevails on global UI decisions; the feature spec prevails only on the feature-specific behavior.
 
+The visual language ("Modern Technical": blue and white, Inter, JetBrains Mono) follows `proposal-ui.md`, **only its system design**. The features that proposal describes (global search, versioning, multi-product, analytics, Git integration and so on) are not part of STC.
+
 ### Technology context
 
 - Frontend: Angular, Tailwind CSS and SpartanNG.
@@ -13,6 +15,7 @@ The pages, flows, data, permissions and business rules of each feature must be d
 - Reuse the components and patterns offered by SpartanNG and the project's shared library first.
 - Use Tailwind and design tokens for visual composition; avoid arbitrary values when an equivalent token exists.
 - Keep domain components separate from primitive, reusable components.
+- Fonts are self-hosted (`@fontsource`); the interface makes no request to a font CDN.
 
 ## 2. Experience principles
 
@@ -32,68 +35,84 @@ Avoid promotional aesthetics, decorative gradients, illustrations without functi
 
 | Name | Hex | Main use |
 |---|---:|---|
-| Pearl Bush | `#ECE6DA` | Light background and neutral context |
-| Foggy Gray | `#CACEB5` | Secondary surfaces and subtle states |
-| Nandor | `#4E615B` | Brand, primary action and positive states |
-| Ebony Clay | `#2F3543` | Strong text and dark surfaces |
-| Ebony Clay Dark | `#1F2532` | Dark background and maximum contrast |
+| Blue 600 | `#2563EB` | Brand, primary action, links, focus |
+| Blue 700 | `#1D4ED8` | Hover, active, info text |
+| Slate 50 | `#F8FAFC` | Page background |
+| Slate 100 | `#F1F5F9` | Sidebar and secondary surfaces |
+| Slate 200 / 300 | `#E2E8F0` / `#CBD5E1` | Borders |
+| Ink | `#172033` | Text |
+| Slate 900 | `#0F172A` | Code blocks and dark background |
 
 State colors are semantic. Never use color alone to convey meaning; combine color with text, icon or visual pattern.
 
 ### 3.2 Normative tokens
 
+`frontend/src/styles/tokens.css` is a copy of this block; keep them in sync.
+
 ```css
 :root {
   color-scheme: light;
 
-  /* Palette */
-  --pearl-bush: #ece6da;
-  --foggy-gray: #caceb5;
-  --nandor: #4e615b;
-  --ebony-clay: #2f3543;
-  --ebony-clay-dark: #1f2532;
-
   /* Surfaces */
-  --bg: #ece6da;
-  --bg-2: #e4ddcf;
-  --surface: #f8f5ee;
-  --surface-2: #f1ece2;
-  --surface-muted: #caceb5;
+  --bg: #f8fafc;
+  --bg-2: #f1f5f9;
+  --surface: #ffffff;
+  --surface-2: #f1f5f9;
+  --surface-muted: #e2e8f0;
+  --sidebar: #f1f5f9;
 
   /* Borders */
-  --border: rgba(47, 53, 67, 0.14);
-  --border-2: rgba(47, 53, 67, 0.24);
-  --border-strong: rgba(47, 53, 67, 0.36);
+  --border: #e2e8f0;
+  --border-2: #cbd5e1;
+  --border-strong: #94a3b8;
 
   /* Text */
-  --text: #1f2532;
-  --text-2: #4e615b;
-  --text-3: rgba(31, 37, 50, 0.58);
-  --text-inverse: #ece6da;
+  --text: #172033;
+  --text-2: #475569;
+  --text-3: #566579;
+  --text-inverse: #ffffff;
 
   /* Brand and actions */
-  --accent: #4e615b;
-  --accent-hover: #43544f;
-  --accent-soft: rgba(78, 97, 91, 0.12);
-  --accent-soft-2: rgba(78, 97, 91, 0.18);
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --accent-soft: rgba(37, 99, 235, 0.08);
+  --accent-soft-2: #dbeafe;
 
-  /* Feedback */
-  --success: #4e615b;
-  --success-bg: rgba(78, 97, 91, 0.12);
-  --success-border: rgba(78, 97, 91, 0.28);
-  --warning: #b7791f;
-  --warning-bg: rgba(183, 121, 31, 0.13);
-  --warning-border: rgba(183, 121, 31, 0.30);
-  --danger: #b94a3a;
-  --danger-bg: rgba(185, 74, 58, 0.12);
-  --danger-border: rgba(185, 74, 58, 0.30);
-  --info: #3f647c;
-  --info-bg: rgba(63, 100, 124, 0.12);
-  --info-border: rgba(63, 100, 124, 0.30);
+  /* Feedback (text and icon colors reach 4.5:1 on their own tinted background) */
+  --success: #166534;
+  --success-bg: rgba(22, 163, 74, 0.1);
+  --success-border: rgba(22, 163, 74, 0.34);
+  --warning: #92400e;
+  --warning-bg: rgba(217, 119, 6, 0.1);
+  --warning-border: rgba(217, 119, 6, 0.38);
+  --danger: #b91c1c;
+  --danger-bg: rgba(220, 38, 38, 0.08);
+  --danger-border: rgba(220, 38, 38, 0.34);
+  --info: #1d4ed8;
+  --info-bg: rgba(37, 99, 235, 0.08);
+  --info-border: rgba(37, 99, 235, 0.3);
+  --deprecated: #64748b;
+
+  /* Code blocks are dark in both themes */
+  --code-bg: #0f172a;
+  --code-fg: #e2e8f0;
+  --code-border: #1e293b;
+  --code-muted: #94a3b8;
+  --code-warning: #fcd34d;
+  --code-danger: #fca5a5;
 
   /* Typography */
-  --sans: "DM Sans", "Inter", system-ui, sans-serif;
-  --mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  --sans: 'Inter Variable', 'Inter', system-ui, sans-serif;
+  --mono: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+  --text-h1: 36px;
+  --text-h2: 28px;
+  --text-h3: 22px;
+  --text-h4: 18px;
+  --text-body: 16px;
+  --text-small: 14px;
+  --text-caption: 12px;
+  --text-code: 13px;
+  --leading-reading: 1.7;
 
   /* Spacing */
   --space-1: 4px;
@@ -105,66 +124,98 @@ State colors are semantic. Never use color alone to convey meaning; combine colo
   --space-8: 32px;
   --space-10: 40px;
   --space-12: 48px;
+  --space-16: 64px;
+  --space-20: 80px;
 
   /* Shape and depth */
   --radius-sm: 4px;
   --radius: 6px;
+  --radius-input: 8px;
   --radius-lg: 10px;
-  --radius-xl: 14px;
-  --shadow: 0 1px 3px rgba(31, 37, 50, 0.08), 0 1px 2px rgba(31, 37, 50, 0.05);
-  --shadow-md: 0 8px 24px rgba(31, 37, 50, 0.12), 0 2px 6px rgba(31, 37, 50, 0.07);
+  --radius-xl: 12px;
+  --shadow: 0 1px 3px rgba(23, 32, 51, 0.08), 0 1px 2px rgba(23, 32, 51, 0.05);
+  --shadow-md: 0 8px 24px rgba(23, 32, 51, 0.12), 0 2px 6px rgba(23, 32, 51, 0.07);
 
   /* Layout and motion */
   --content-max: 1360px;
-  --header-height: 56px;
+  --header-height: 64px;
+  --sidebar-width: 260px;
+  --toc-width: 220px;
+  --reading-max: 850px;
+  --reading-padding: 48px;
   --transition: 180ms ease;
 }
 
-[data-theme="dark"] {
+[data-theme='dark'] {
   color-scheme: dark;
-  --bg: #1f2532;
-  --bg-2: #252c3a;
-  --surface: #2f3543;
-  --surface-2: #363d4d;
-  --surface-muted: rgba(202, 206, 181, 0.12);
-  --border: rgba(236, 230, 218, 0.12);
-  --border-2: rgba(236, 230, 218, 0.20);
-  --border-strong: rgba(236, 230, 218, 0.34);
-  --text: #ece6da;
-  --text-2: #caceb5;
-  --text-3: rgba(236, 230, 218, 0.58);
-  --text-inverse: #1f2532;
-  --accent: #caceb5;
-  --accent-hover: #d8dbc7;
-  --accent-soft: rgba(202, 206, 181, 0.13);
-  --accent-soft-2: rgba(202, 206, 181, 0.20);
-  --success: #caceb5;
-  --success-bg: rgba(202, 206, 181, 0.13);
-  --success-border: rgba(202, 206, 181, 0.30);
-  --warning: #d49a3a;
-  --warning-bg: rgba(212, 154, 58, 0.14);
-  --warning-border: rgba(212, 154, 58, 0.32);
-  --danger: #e06a5b;
-  --danger-bg: rgba(224, 106, 91, 0.14);
-  --danger-border: rgba(224, 106, 91, 0.34);
-  --info: #8eaec1;
-  --info-bg: rgba(142, 174, 193, 0.14);
-  --info-border: rgba(142, 174, 193, 0.34);
+  --bg: #0b1220;
+  --bg-2: #0f172a;
+  --surface: #131c31;
+  --surface-2: #1a243b;
+  --surface-muted: #243049;
+  --sidebar: #0f172a;
+  --border: rgba(226, 232, 240, 0.12);
+  --border-2: rgba(226, 232, 240, 0.2);
+  --border-strong: rgba(226, 232, 240, 0.34);
+  --text: #e2e8f0;
+  --text-2: #cbd5e1;
+  --text-3: #94a3b8;
+  --text-inverse: #0b1220;
+  --accent: #60a5fa;
+  --accent-hover: #93c5fd;
+  --accent-soft: rgba(96, 165, 250, 0.12);
+  --accent-soft-2: rgba(96, 165, 250, 0.2);
+  --success: #4ade80;
+  --success-bg: rgba(74, 222, 128, 0.14);
+  --success-border: rgba(74, 222, 128, 0.34);
+  --warning: #fbbf24;
+  --warning-bg: rgba(251, 191, 36, 0.14);
+  --warning-border: rgba(251, 191, 36, 0.36);
+  --danger: #f87171;
+  --danger-bg: rgba(248, 113, 113, 0.14);
+  --danger-border: rgba(248, 113, 113, 0.36);
+  --info: #60a5fa;
+  --info-bg: rgba(96, 165, 250, 0.14);
+  --info-border: rgba(96, 165, 250, 0.34);
+  --deprecated: #94a3b8;
+  --code-bg: #0b1220;
+  --code-border: rgba(226, 232, 240, 0.12);
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.32), 0 1px 2px rgba(0, 0, 0, 0.22);
   --shadow-md: 0 10px 30px rgba(0, 0, 0, 0.42), 0 2px 8px rgba(0, 0, 0, 0.24);
 }
 ```
 
-Implementations may map these tokens to Tailwind, but the semantic names and values must remain the source of truth.
+Implementations may map these tokens to Tailwind (`src/styles/spartan-theme.css` does, in the SpartanNG naming: helm `primary` is `--accent`, helm `accent` is `--accent-soft`), but the semantic names and values must remain the source of truth.
+
+### 3.3 Contrast and approved deviations
+
+Text and icon colors are measured against the surface they sit on (WCAG 2.2 AA: 4.5:1 for text, 3:1 for graphics). Where the proposal's values failed, this SPEC deliberately differs:
+
+| Token | Proposal | This SPEC | Why |
+|---|---|---|---|
+| `--text-3` (muted text) | `#64748B` | `#566579` | The proposal's value is below 4.5:1 on the sidebar surface |
+| `--success` (text) | `#16A34A` | `#166534` | Below 4.5:1 on its tinted background; the proposal's green stays in the background and border tokens |
+| `--warning` (text) | `#D97706` | `#92400E` | Same reason |
+| `--danger` (text) | `#DC2626` | `#B91C1C` | Same reason |
+| Font weights | 600 | `650` allowed | Inter is the variable font, so intermediate weights work |
+
+Dark theme text and feedback colors are lighter tints of the same hues and meet the same ratios.
 
 ## 4. Typography and content
 
-- Base: `14px`, `line-height` between `1.5` and `1.6` for running text.
+| Role | Token | Use |
+|---|---|---|
+| Interface and chat text | `--text-small` (14px) | Controls, chat, lists, navigation; `line-height` 1.5 to 1.6 |
+| Reading text | `--text-body` (16px) | **Only** the documentation reading area (`/docs` article), `line-height: var(--leading-reading)` (1.7) |
+| Headings in the reading area | `--text-h1` 36px, `--text-h2` 28px, `--text-h3` 22px, `--text-h4` 18px | Inside `.doc-content`; elsewhere headings are no larger than 20px |
+| Captions and labels | `--text-caption` (12px) | Meta information, breadcrumbs |
+| Code | `--text-code` (13px) | Inline code and code blocks |
+
 - Interface and content: `var(--sans)`.
 - IDs, timestamps, code, metrics and tabular data: `var(--mono)`.
-- Use a limited, hierarchical type scale; headings must not depend on size or color alone.
+- Headings must not depend on size or color alone.
 - Labels must be short, specific and close to the corresponding control.
-- Avoid all-uppercase text, except in short labels, badges and compact headers.
+- Avoid all-uppercase text, except in short labels, badges and compact headers (tree group names, "On this page").
 - Messages must state what happened and, when applicable, what the user can do next.
 
 ## 5. Global base and layout
@@ -172,6 +223,8 @@ Implementations may map these tokens to Tailwind, but the semantic names and val
 - Apply `box-sizing: border-box` globally and remove the default `body` margins.
 - The `body` uses background `var(--bg)`, text `var(--text)`, `min-height: 100vh` and antialiasing.
 - The main content has maximum width `var(--content-max)`, automatic margin and 16px horizontal padding; from 640px, use 24px.
+- The application header is sticky, `var(--header-height)` (64px) tall.
+- The documentation layout has three columns: sidebar (`--sidebar-width`, 260px, from `lg`), article (`--reading-max`, 850px, padding `--reading-padding`, 48px from `lg`) and "On this page" (`--toc-width`, 220px, from `xl`). Below `lg` the sidebar becomes a drawer; below `xl` the table of contents becomes a disclosure at the top of the article.
 - Use grid or flexbox predictably, keeping the visual order consistent with the DOM order.
 - The page header includes a title, an optional description and contextual actions; on narrow screens, actions may stack without losing hierarchy.
 - Persistent navigation must clearly indicate the active item and remain keyboard accessible.
@@ -182,7 +235,7 @@ Implementations may map these tokens to Tailwind, but the semantic names and val
 
 ### 6.1 Buttons
 
-Allowed variants: `primary`, `secondary`, `ghost` and `destructive`.
+Allowed variants: `primary`, `secondary` (outline), `ghost` and `destructive`.
 
 - There must be at most one primary action per action group.
 - All buttons implement default, hover, active, focus-visible, disabled and loading states.
@@ -195,6 +248,7 @@ Allowed variants: `primary`, `secondary`, `ghost` and `destructive`.
 - Each field has a visible label, unless an equally clear and accessible alternative exists.
 - Helper text and errors must be programmatically associated with the field.
 - Required states: default, hover, focus-visible, disabled, readonly, valid and invalid.
+- Inputs use radius `var(--radius-input)`.
 - Validate at the right moment: avoid errors before the first interaction, unless submission requires full validation.
 - Preserve entered data after recoverable failures.
 - Required fields must be identified by text or an explained symbol, never by color alone.
@@ -211,29 +265,46 @@ Allowed variants: `primary`, `secondary`, `ghost` and `destructive`.
 - Use tables for data comparable by columns; use lists or cards when tabular comparison is not needed.
 - Headers must be programmatically associated with cells.
 - Align numbers consistently and use a monospaced font for identifiers and metrics.
-- Offer horizontal scroll on narrow screens or a responsive representation defined in the feature spec.
+- Offer horizontal scroll on narrow screens (inside the article, never on the page).
 - Pagination, sorting, filters and selection must keep visible state and feedback.
 - Empty, loading and error states occupy the table region without unexpectedly changing the layout.
 
 ### 6.5 Badges and states
 
-- Variants: `neutral`, `success`, `warning`, `danger` and `info`.
+- Variants: `neutral`, `success`, `warning`, `danger`, `info` and `deprecated` (struck through).
 - Combine text with color; icons are optional and never replace the label.
-- Use badges for state or short categorization, not for actions.
+- Radius `var(--radius)`; use badges for state or short categorization, not for actions.
 
-### 6.6 Modals, dialogs and drawers
+### 6.6 Alerts
+
+- Variants: `info`, `success`, `warning`, `danger`, each with an icon and text; the tinted background and border come from the feedback tokens, the text stays `--text`.
+- Alerts that report a status of the page (outdated, incomplete) use `role="status"`; failures use `role="alert"`.
+
+### 6.7 Modals, dialogs and drawers
 
 - Use a modal only when the task requires immediate attention or contextual confirmation.
 - Focus enters the dialog, stays contained while it is open and returns to the originating element on close.
 - There must be an accessible title, a close action and defined behavior for `Escape`.
 - Do not close on outside click when that could cause data loss or implicitly confirm an action.
-- On mobile, drawers or full-screen dialogs may replace narrow modals when they improve the task.
+- On mobile, drawers or full-screen dialogs may replace narrow modals when they improve the task (the documentation sidebar is one).
 
-### 6.7 Tooltips, menus and popovers
+### 6.8 Tooltips, menus and popovers
 
 - Essential content must never exist only in a tooltip.
 - Actionable elements must work by keyboard and touch, not only by hover.
 - Menus implement focus management, arrow keys and closing with `Escape`.
+
+### 6.9 Documentation components
+
+Used by the `/docs` viewer; they reuse the tokens above.
+
+- **Breadcrumbs:** application, group, page; the current page is plain text with `aria-current="page"`, the others are links; separated by a chevron icon.
+- **Page tree:** groups that expand and collapse (button with `aria-expanded`), the group of the current page open by default, every group open while filtering; the current page is highlighted (`--accent-soft-2`) and has `aria-current="page"`; rows are at least 36px tall.
+- **Table of contents:** level 2 and 3 headings, the one being read highlighted by scroll position (`aria-current="location"`), clicking moves focus to the heading.
+- **Code block:** dark in both themes (`--code-*` tokens), a bar with the language and a **Copy** button that announces "Copied" for two seconds; also used for the code behind a citation.
+- **Previous / next:** two cards at the end of the article.
+- **Tables** in the article scroll horizontally inside their own container.
+- **Diagrams** (Mermaid) are drawn with the tokens and fall back to their source when they cannot be drawn.
 
 ## 7. Feedback and interface states
 
@@ -257,13 +328,13 @@ Reference breakpoints, aligned with Tailwind:
 | Base | `0px` | Mobile-first |
 | `sm` | `640px` | Large phones and small tablets |
 | `md` | `768px` | Tablets |
-| `lg` | `1024px` | Desktop |
-| `xl` | `1280px` | Wide desktop |
+| `lg` | `1024px` | Desktop (documentation sidebar visible) |
+| `xl` | `1280px` | Wide desktop (table of contents visible) |
 | `2xl` | `1536px` | Very wide screens |
 
 - Implement mobile-first and validate with real content, zoom and long strings.
 - No essential action may depend exclusively on hover.
-- Interactive targets should be at least 44×44 CSS pixels whenever possible.
+- Interactive targets should be at least 44×44 CSS pixels whenever possible; dense navigation lists may use 36px rows.
 - Tables, code and wide content must handle overflow without squeezing text until it is illegible.
 - Do not hide essential content merely to fit the layout; reorganize or offer progressive disclosure.
 
@@ -272,8 +343,8 @@ Reference breakpoints, aligned with Tailwind:
 Minimum target: WCAG 2.2 level AA.
 
 - Use semantic HTML before ARIA.
-- Ensure full keyboard navigation, a logical focus order and a clearly perceivable `focus-visible` indicator.
-- Normal text must reach a minimum contrast of 4.5:1; large text and essential graphical elements, 3:1.
+- Ensure full keyboard navigation, a logical focus order and a clearly perceivable `focus-visible` indicator (2px outline in `--accent`, offset 2px).
+- Normal text must reach a minimum contrast of 4.5:1; large text and essential graphical elements, 3:1 (see 3.3).
 - Controls must have an accessible name, role, value and state.
 - Important asynchronous changes must be announced without improperly moving focus.
 - Informative images need alternative text; decorative images must be ignored by assistive technologies.
@@ -294,9 +365,9 @@ Minimum target: WCAG 2.2 level AA.
 ## 11. Themes and preferences
 
 - Light and dark themes must use the same semantic tokens and keep an equivalent hierarchy.
-- The strategy for selecting and persisting the theme must be defined by the project; the initial state must respect the system preference when there is no saved choice.
+- The theme is chosen by the user (toggle in the header), saved in the browser, and follows the system preference when there is no saved choice.
 - Theme changes must not cause loss of state or a prolonged flash of the wrong theme.
-- Third-party components must be themed with the same tokens.
+- Third-party components (Shiki, Mermaid) must be themed with the same tokens.
 
 ## 12. Presentation security
 
@@ -323,6 +394,7 @@ A UI implementation is only complete when it:
 ## 14. Relationship with other artifacts
 
 - **Feature spec:** defines pages, flows, data, permissions, content and specific criteria.
+- **`proposal-ui.md`:** the design reference this SPEC was derived from; only its system design applies.
 - **Design tokens:** materialize this SPEC's normative values in formats consumable by code.
 - **Component library:** implements the reusable patterns.
 - **UI engineering skill:** defines the procedure agents use to implement UI.

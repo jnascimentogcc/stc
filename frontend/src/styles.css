@@ -3,10 +3,8 @@
 @import 'tailwindcss/preflight.css' layer(base);
 @import 'tailwindcss/utilities.css';
 
-@import '@fontsource/dm-sans/400.css';
-@import '@fontsource/dm-sans/500.css';
-@import '@fontsource/dm-sans/700.css';
-@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource-variable/inter/index.css';
+@import '@fontsource/jetbrains-mono/400.css';
 
 /* Normative tokens (copy of docs/ui-spec.md §3.2) */
 @import './styles/tokens.css';
@@ -29,7 +27,7 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--sans);
-  font-size: 14px;
+  font-size: var(--text-small);
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
 }
@@ -99,15 +97,18 @@ body {
 }
 .markdown pre {
   overflow-x: auto;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  background: var(--code-bg);
+  color: var(--code-fg);
+  border: 1px solid var(--code-border);
+  border-radius: var(--radius-lg);
   padding: 0.75em 1em;
+  font-size: var(--text-code);
 }
 .markdown pre code {
   background: none;
   border: 0;
   padding: 0;
+  font-size: inherit;
 }
 .markdown blockquote {
   border-left: 3px solid var(--border-2);
@@ -116,6 +117,7 @@ body {
 }
 .markdown table {
   display: block;
+  max-width: 100%;
   overflow-x: auto;
   border-collapse: collapse;
 }
@@ -154,17 +156,52 @@ body {
   font-size: 0.85em;
   text-align: left;
 }
-.doc-content > div > h1 {
-  font-size: 1.6rem;
+/* The reading area of the documentation (ui-spec §4.2): 16px with a 1.7 line height. */
+.doc-content {
+  font-size: var(--text-body);
+  line-height: var(--leading-reading);
+}
+.doc-content h1 {
+  font-size: var(--text-h1);
+  font-weight: 700;
+  line-height: 1.2;
+}
+.doc-content h2 {
+  font-size: var(--text-h2);
+  font-weight: 650;
+  line-height: 1.25;
+}
+.doc-content h3 {
+  font-size: var(--text-h3);
+  font-weight: 600;
+}
+.doc-content h4 {
+  font-size: var(--text-h4);
+  font-weight: 600;
 }
 .doc-content > div > h2 {
-  margin-top: 1.75em;
+  margin-top: 2em;
   padding-bottom: 0.25em;
   border-bottom: 1px solid var(--border);
 }
+.doc-content > div > h3 {
+  margin-top: 1.5em;
+}
 .doc-content > div > h1 + blockquote {
-  font-size: 0.8rem;
+  font-size: var(--text-small);
+  line-height: 1.55;
   color: var(--text-3);
+}
+.doc-content code {
+  font-size: 0.85em;
+}
+.doc-content table {
+  font-size: var(--text-small);
+  line-height: 1.5;
+}
+.doc-content th,
+.doc-content td {
+  vertical-align: top;
 }
 .doc-content h1,
 .doc-content h2,

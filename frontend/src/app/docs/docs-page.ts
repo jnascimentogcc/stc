@@ -3,6 +3,8 @@ import {
   Component,
   computed,
   effect,
+  ElementRef,
+  viewChild,
   inject,
   input,
   signal,
@@ -12,39 +14,49 @@ import { NgTemplateOutlet } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
 import { NgIcon, provideIcons } from '@ng-icons/core';
 import {
-  lucideChevronLeft,
-  lucideChevronRight,
   lucideDownload,
+  lucideInfo,
+  lucideMenu,
   lucideTriangleAlert,
+  lucideX,
 } from '@ng-icons/lucide';
 import { TranslocoDirective } from '@jsverse/transloco';
+import { HlmAlertImports } from '@spartan-ng/helm/alert';
+import { HlmBadgeImports } from '@spartan-ng/helm/badge';
 import { HlmButtonImports } from '@spartan-ng/helm/button';
 import { ThemeService } from '../theme';
+import { BreadcrumbsComponent, Crumb } from '../ui/breadcrumbs';
 import { CodePanelComponent } from './code-panel';
 import { DocContentComponent, DocLink } from './doc-content';
 import { DocsApi } from './docs-api';
 import { renderDoc } from './docs-markdown';
-import { DocCitation, DocPageRef } from './docs-models';
+import { DocCitation } from './docs-models';
 import { DocsStore } from './docs-store';
+import { DocsTocComponent } from './docs-toc';
+import { DocsTreeComponent, TreeGroup } from './docs-tree';
+import { PageNavComponent } from './page-nav';
 
-interface Group {
-  name: string;
-  pages: DocPageRef[];
-}
+type Group = TreeGroup;
 
 @Component({
   selector: 'app-docs-page',
   imports: [
+    BreadcrumbsComponent,
     CodePanelComponent,
     DocContentComponent,
+    DocsTocComponent,
+    DocsTreeComponent,
     NgIcon,
     NgTemplateOutlet,
+    PageNavComponent,
     RouterLink,
     TranslocoDirective,
+    ...HlmAlertImports,
+    ...HlmBadgeImports,
     ...HlmButtonImports,
   ],
   providers: [
-    provideIcons({ lucideChevronLeft, lucideChevronRight, lucideDownload, lucideTriangleAlert }),
+    provideIcons({ lucideDownload, lucideInfo, lucideMenu, lucideTriangleAlert, lucideX }),
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './docs-page.html',
@@ -96,8 +108,25 @@ export class DocsPage {
   });
 
   protected readonly toc = computed(() =>
-    (this.rendered()?.headings ?? []).filter((h) => h.level === 2),
+    (this.rendered()?.headings ?? []).filter((h) => h.level === 2 || h.level === 3),
   );
+
+  protected readonly crumbs = computed<Crumb[]>(() => {
+    const app = this.app();
+    const page = this.store.page();
+    if (!app) return [];
+    const crumbs: Crumb[] = [{ label: app, link: ['/docs', app] }];
+    if (page) {
+      if (page.group) crumbs.push({ label: page.group });
+      crumbs.push({ label: page.title });
+    }
+    return crumbs;
+  });
+
+  protected readonly menuOpen = signal(false);
+  private readonly menuButton = viewChild<ElementRef<HTMLElement>>('menuButton');
+  private readonly drawerClose = viewChild<ElementRef<HTMLElement>>('drawerClose');
+  private readonly drawer = viewChild<ElementRef<HTMLElement>>('drawer');
 
   protected readonly exportUrl = computed(() => {
     const app = this.app();
@@ -115,9 +144,45 @@ export class DocsPage {
       this.store.page();
       untracked(() => {
         this.openCode.set(null);
+        this.menuOpen.set(false);
         globalThis.scrollTo?.({ top: 0 });
       });
     });
+    effect(() => {
+      const close = this.drawerClose();
+      if (close) untracked(() => close.nativeElement.focus());
+    });
+  }
+
+  protected openMenu(): void {
+    this.menuOpen.set(true);
+  }
+
+  protected closeMenu(): void {
+    this.menuOpen.set(false);
+    setTimeout(() => this.menuButton()?.nativeElement.focus());
+  }
+
+  /** Escape closes the drawer; Tab stays inside it. */
+  protected drawerKey(event: KeyboardEvent): void {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      this.closeMenu();
+      return;
+    }
+    if (event.key !== 'Tab') return;
+    const root = this.drawer()?.nativeElement;
+    const items = root?.querySelectorAll<HTMLElement>('a[href], button, input, select');
+    if (!items || items.length === 0) return;
+    const first = items[0];
+    const last = items[items.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
   }
 
   protected chooseApp(name: string): void {
@@ -131,11 +196,5 @@ export class DocsPage {
 
   protected link(path: string): { page: string } {
     return { page: path };
-  }
-
-  protected scrollTo(id: string): void {
-    const target = document.getElementById(id);
-    target?.scrollIntoView?.({ block: 'start' });
-    target?.focus?.({ preventScroll: true });
   }
 }
