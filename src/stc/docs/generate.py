@@ -81,7 +81,9 @@ PART_TASKS = {
     "a new frontend: for each screen what the user sees and fills in, the fields with their "
     "format, size and whether they are required, the validations and the messages shown when "
     "they fail, the keys or actions that move to another screen, and what is saved. Use the exact "
-    "values and messages in the code. One statement per screen behavior.",
+    "values and messages in the code. Describe what the legacy screens do; the technology of "
+    "the target stack belongs to the design, so name it only where a field or a route needs it. "
+    "One statement per screen behavior.",
     "spec-api": "Define the contract between the frontend and the backend for this feature: the "
     "REST operations the screens need (what each sends and receives, the validation errors it "
     "returns, the tables it reads or writes), derived from what the legacy programs do when the "

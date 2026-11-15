@@ -11,7 +11,7 @@ from collections import defaultdict
 
 import psycopg
 
-from stc.catalog.context import SectionContext, _pack, build_context
+from stc.catalog.context import ContextItem, SectionContext, _pack, build_context
 from stc.docs import context as ctx
 from stc.docs import diagrams
 from stc.docs.ddl import read_tables
@@ -202,7 +202,7 @@ def spec_contexts(
     )[:MAX_FACTS]
     rules = base["rules"]
     flow = base["flow"]
-    ui = _screen_contexts(conn, app_id, facts, feature, shared, data_lines, rules)
+    ui = _screen_contexts(conn, app_id, facts, feature, shared, data_lines, rules, flow, layout)
     return {
         **ui,
         "spec-intent": base["summary"],
@@ -230,6 +230,8 @@ def _screen_contexts(
     shared: list[str],
     data_lines: list[str],
     rules: SectionContext,
+    flow: SectionContext,
+    layout: list[ContextItem],
 ) -> dict[str, SectionContext]:
     """Evidence for the frontend: the screens, their fields, the validations of what the user
     types and the data the feature saves. Empty for a feature with no screens."""
@@ -241,13 +243,11 @@ def _screen_contexts(
         conn, app_id, paths, regex=r"(SCREEN SECTION|DFHMDI|DFHMDF)", limit=20
     )
     saved = [line for line in data_lines if "writes" in line.lower() or "insert" in line.lower()]
+    # the validations, the values they compare with (the data division) and what is saved
+    items = _pack(ctx._merge(definitions, rules.items, layout, flow.items))
     return {
-        "spec-screens": SectionContext(
-            _pack(ctx._merge(definitions, rules.items)), (lines + shared)[:MAX_FACTS]
-        ),
-        "spec-api": SectionContext(
-            _pack(ctx._merge(definitions, rules.items)), (lines + saved + data_lines)[:MAX_FACTS]
-        ),
+        "spec-screens": SectionContext(items, (lines + shared)[:MAX_FACTS]),
+        "spec-api": SectionContext(items, (lines + saved + data_lines)[:MAX_FACTS]),
     }
 
 

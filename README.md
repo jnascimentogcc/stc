@@ -54,7 +54,7 @@ While it works, the chat shows the steps it takes over the query engine; the sco
 
 ### Searching COBOL programs
 
-STC also reads COBOL, copybooks and JCL (no documentation needed). The screenshots below use the fictional bank in `examples/cobol-bank-root/` (a loans application and a collections application, with a nightly batch job, copybooks and DB2 tables). Business-rule questions can be answered in business language, with every citation checked against the indexed code.
+STC also reads COBOL, copybooks and JCL (no documentation needed). The screenshots below use the fictional bank in `examples/cobol-bank-root/` (a loans application, a collections application and a teller application, with a nightly batch job, copybooks, DB2 tables and terminal screens). Business-rule questions can be answered in business language, with every citation checked against the indexed code.
 
 A functional question: the answer finds the rate table (a copybook) and the program that reads it, and says what the code does not establish.
 
@@ -69,6 +69,8 @@ Relations between applications come from the code, not from guesses: the collect
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/cobol-dependencies-dark.png">
   <img alt="The chat explains that collections depends on loans-core through a batch dataset and a shared copybook, citing the JCL members and the COBOL programs." src="docs/images/cobol-dependencies-light.png">
 </picture>
+
+Terminal screens are read too (`SCREEN SECTION`, `ACCEPT`/`DISPLAY ... AT` and CICS BMS maps): the documentation lists each screen with its fields and the navigation between screens, and `stc spec` turns them into forms and an API contract for a new frontend (the sample `teller` application has a transfer screen and a balance map; `examples/stack-spring-angular.txt` describes a Spring Boot and Angular target).
 
 Clicking a citation opens the cited COBOL lines, with the code version they were indexed from.
 
