@@ -174,3 +174,40 @@ def test_teller_spec_has_the_screen_parts_and_the_forms(conn: psycopg.Connection
     assert "## Forms to build" in statics and "decimal" in statics and "password" in statics
     index = next(p for p in plan.pages if p.path == "index.md")
     assert "Angular" in " ".join(b.markdown for b in index.blocks if isinstance(b, Static))
+
+
+def test_output_option_writes_docs_and_specs_to_the_given_folder(
+    conn: psycopg.Connection,
+    temp_db_url: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from typer.testing import CliRunner
+
+    from stc.cli import app
+    from stc.config import get_settings
+
+    default_docs, default_specs = tmp_path / "default-docs", tmp_path / "default-specs"
+    monkeypatch.chdir(tmp_path)  # no .env
+    monkeypatch.setenv("STC_DB_URL", temp_db_url)
+    monkeypatch.setenv("STC_DOCS", str(default_docs))
+    monkeypatch.setenv("STC_SPECS", str(default_specs))
+    get_settings.cache_clear()
+    runner = CliRunner()
+    try:
+        out_docs, out_specs = tmp_path / "out-docs", tmp_path / "out-specs"
+        docs_result = runner.invoke(
+            app, ["docs", "teller", "--static-only", "--output", str(out_docs)]
+        )
+        spec_result = runner.invoke(app, ["spec", "teller", "--static-only", "-o", str(out_specs)])
+        assert docs_result.exit_code == 0, docs_result.output
+        assert spec_result.exit_code == 0, spec_result.output
+        assert (out_docs / "teller" / "index.md").is_file()
+        assert (out_specs / "teller" / "CLAUDE.md").is_file()
+        assert not default_docs.exists() and not default_specs.exists()
+
+        plain = runner.invoke(app, ["docs", "teller", "--static-only"])
+        assert plain.exit_code == 0, plain.output
+        assert (default_docs / "teller" / "index.md").is_file()
+    finally:
+        get_settings.cache_clear()

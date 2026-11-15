@@ -157,6 +157,7 @@ Options that mean the same everywhere:
 
 - `--dry-run` shows what the command would do, and its estimated cost, without doing it.
 - `--yes` skips the confirmation asked before a large run (embeddings above 1,000,000 tokens, or a generation run).
+- `--output DIR` (`-o`), on `catalog`, `docs` and `spec`, writes to that folder instead of `STC_CATALOGS`, `STC_DOCS` or `STC_SPECS` (the application subfolders are created inside it). The incremental state lives in the output folder (`_meta.json` and the `stc:manual` corrections), so a set written to a new folder is generated from scratch: every page is written again, with its cost, and the corrections kept in the usual folder are not read.
 - `--root DIR` is the folder with the applications (default `STC_ROOT`); `--source NAME` limits the work to one folder declared in `sources.toml`.
 
 Whatever is sent to a provider is already free of secrets: files that may hold credentials are excluded before any processing, and `--dry-run` shows what would go out.
@@ -295,6 +296,7 @@ Generates the **catalog** of an application: a markdown file `STC_CATALOGS/<appl
 | `APPLICATION` or `--all` | One application (see `stc detect`) or every indexed one |
 | `--dry-run` | Show what would be sent and the estimate |
 | `--force` | Regenerate even if the inputs did not change |
+| `--output DIR`, `-o` | Write the catalogs and the global map to this folder (default `STC_CATALOGS`) |
 | `--yes` | Do not ask before running |
 
 ```bash
@@ -320,6 +322,7 @@ Generates the **application documentation** in `STC_DOCS/<application>/`: linked
 | `--dry-run` | Which pages would be written, and the cost |
 | `--force` | Regenerate every page |
 | `--static-only` | Write only tables and diagrams; no model is called and the narrative parts are marked as not generated (it never overwrites model text) |
+| `--output DIR`, `-o` | Write to `DIR/<application>/` instead of `STC_DOCS` |
 | `--yes` | Do not ask before running |
 
 ```bash
@@ -335,12 +338,14 @@ Generates the **migration specifications** in `STC_SPECS/<application>/`: an `in
 |---|---|
 | `APPLICATION` or `--all` | One application or every indexed one |
 | `--stack FILE` | A text file describing the target technology (also `STC_SPEC_STACK`). Default: Java, Spring Boot, JPA, PostgreSQL, asynchronous REST, plus an Angular frontend when there are screens. See `examples/stack-spring-angular.txt` |
+| `--output DIR`, `-o` | Write to `DIR/<application>/` instead of `STC_SPECS` |
 | `--dry-run`, `--force`, `--yes` | As in `docs` |
 | `--static-only` | Write only the order, dependencies, tables and diagrams; no model is called |
 
 ```bash
 uv run stc spec teller --stack examples/stack-spring-angular.txt --dry-run
 uv run stc spec teller --stack examples/stack-spring-angular.txt
+uv run stc spec teller --stack examples/stack-spring-angular.txt -o ../new-project/specs
 ```
 
 ### Asking questions

@@ -114,6 +114,18 @@ SourceOption = Annotated[
     str | None, typer.Option("--source", help="Only this source (see sources.toml).")
 ]
 
+OutputOption = Annotated[
+    Path | None,
+    typer.Option(
+        "--output",
+        "-o",
+        help="Folder to write to, instead of the one in the settings. A set written to another "
+        "folder starts from scratch: pages are generated again and the manual corrections of "
+        "the usual folder are not read.",
+    ),
+]
+
+
 YesOption = Annotated[
     bool, typer.Option("--yes", help="Do not ask for confirmation of a large embedding run.")
 ]
@@ -846,6 +858,7 @@ def catalog(
     force: Annotated[
         bool, typer.Option("--force", help="Regenerate even if the inputs did not change.")
     ] = False,
+    output: OutputOption = None,
     yes: YesOption = False,
 ) -> None:
     """Generate the catalog of one application (or --all) and refresh the global map."""
@@ -853,6 +866,8 @@ def catalog(
         typer.echo("Give an application name or --all (not both).", err=True)
         raise typer.Exit(code=2)
     settings = get_settings()
+    if output is not None:
+        settings = settings.model_copy(update={"catalogs": output})
     if settings.db_url is None:
         typer.echo("STC_DB_URL is not set.", err=True)
         raise typer.Exit(code=2)
@@ -960,12 +975,15 @@ def _write_sets(
     *,
     stack: Path | None = None,
     spec: bool = False,
+    output: Path | None = None,
 ) -> None:
     """The shared run of `stc docs` and `stc spec`: one set of pages per application."""
     if (application is not None) == all_applications:
         typer.echo("Give an application name or --all (not both).", err=True)
         raise typer.Exit(code=2)
     settings = get_settings()
+    if output is not None:
+        settings = settings.model_copy(update={"specs" if spec else "docs": output})
     label = "specification" if spec else "documentation"
     planner = None
     if spec:
@@ -1066,10 +1084,11 @@ def docs(
             "called and the narrative parts are marked as not generated.",
         ),
     ] = False,
+    output: OutputOption = None,
     yes: YesOption = False,
 ) -> None:
     """Generate the documentation of one application (or --all): pages with diagrams (DOC-01)."""
-    _write_sets(application, all_applications, dry_run, force, static_only, yes)
+    _write_sets(application, all_applications, dry_run, force, static_only, yes, output=output)
 
 
 @app.command()
@@ -1103,12 +1122,14 @@ def spec(
             "model is called and the narrative parts are marked as not generated.",
         ),
     ] = False,
+    output: OutputOption = None,
     yes: YesOption = False,
 ) -> None:
     """Generate a migration specification per feature of one application (or --all) (SPC-01)."""
     _write_sets(
-        application, all_applications, dry_run, force, static_only, yes, stack=stack, spec=True
-    )
+        application, all_applications, dry_run, force, static_only, yes,
+        stack=stack, spec=True, output=output,
+    )  # fmt: skip
 
 
 @app.command(name="map")
