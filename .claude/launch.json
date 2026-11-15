@@ -1,0 +1,18 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "docs-api",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["run", "uvicorn", "stc.api.app:app", "--port", "8000"],
+      "port": 8000,
+      "env": { "STC_ENV_FILE": ".env.cobol" }
+    },
+    {
+      "name": "docs-web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "frontend", "start"],
+      "port": 4200
+    }
+  ]
+}
