@@ -10,6 +10,7 @@ class Item:
     text: str
     text_sha256: str
     confidence: str
+    scenario: dict[str, list[str]] | None = None
 
 
 @dataclass(frozen=True)

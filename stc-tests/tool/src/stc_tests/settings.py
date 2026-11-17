@@ -15,3 +15,9 @@ def specs_dir(option: Path | None) -> Path:
 def output_dir(option: Path | None) -> Path:
     """`--output`, else `STC_TESTS`, else `./testsuites`."""
     return option or Path(os.environ.get("STC_TESTS") or DEFAULT_OUTPUT)
+
+
+def catalog_path() -> Path | None:
+    """`STC_TESTS_CATALOG`: the `catalog/actions.json` of the test repository, if set."""
+    value = os.environ.get("STC_TESTS_CATALOG")
+    return Path(value) if value else None

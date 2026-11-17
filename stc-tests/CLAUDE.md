@@ -14,7 +14,7 @@ The root `CLAUDE.md` still applies (everything in English, no private data, no s
 
 ## Layout
 
-- `tool/` — Python (uv, Typer, pytest, ruff, mypy strict): reader, drift state, later agents and mapping.
+- `tool/` — Python (uv, Typer, pytest, ruff, mypy strict): reader, drift state, minimal LLM client, scenario writer; later mapping and more agents.
 - `spike/` — Java experiment that validated the stack (Cucumber, REST Assured, JUnit 5). Not the template.
 - `template/` — Java repository the client runs in its own CI: sample scenarios and steps, the scenario linter, `specs/` for the sidecars, and its own copy of `contract/` (kept identical to `contracts/` by a test in `tool/`). `mvn test` needs no target; `mvn -Pacceptance test` needs `TARGET_URL`.
 
@@ -24,6 +24,7 @@ The root `CLAUDE.md` still applies (everything in English, no private data, no s
 uv sync
 uv run stc-tests check --all --specs DIR
 uv run stc-tests ingest APP --specs DIR --output DIR [--dry-run]
+uv run stc-tests scenarios APP --catalog PATH [--force] [--dry-run]   # needs STC_TESTS_LLM_MODEL
 uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest
 ```
 

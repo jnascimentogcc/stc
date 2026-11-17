@@ -43,7 +43,14 @@ def read_application(specs: Path, folder: str) -> Application:
                 title=sidecar["feature"]["title"],
                 code_version=sidecar["code_version"],
                 items=tuple(
-                    Item(i["id"], i["kind"], i["text"], i["text_sha256"], i["confidence"])
+                    Item(
+                        i["id"],
+                        i["kind"],
+                        i["text"],
+                        i["text_sha256"],
+                        i["confidence"],
+                        i.get("scenario"),
+                    )
                     for i in sidecar["items"]
                 ),
                 retired=tuple(r["id"] for r in sidecar.get("retired", [])),
