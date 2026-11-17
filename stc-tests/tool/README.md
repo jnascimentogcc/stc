@@ -28,6 +28,7 @@ overwritten: the new draft goes to `<feature>.proposed.feature` unless `--force`
 `--dry-run` builds the prompts and calls no model.
 
 The model is configured by `STC_TESTS_LLM_MODEL`, `OPENAI_API_KEY` and (optionally)
-`OPENAI_BASE_URL`; the client is the small one in `llm.py` (one call, a JSON Schema reply). Prompts
+`OPENAI_BASE_URL`, from the environment or from a file given to `--env-file` (or `STC_ENV_FILE`;
+variables already set win, and values are never printed), as in `uv run stc-tests --env-file ../../.env scenarios ...`; the client is the small one in `llm.py` (one call, a JSON Schema reply). Prompts
 carry specification text: use real specifications only under the terms agreed with the client.
 Step matching in the tool supports `{string}`, `{int}`, `{float}`, `{word}` and `{}`.

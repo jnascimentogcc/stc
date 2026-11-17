@@ -1,10 +1,11 @@
 import json
+import os
 from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
 
-from stc_tests import state
+from stc_tests import settings, state
 from stc_tests.cli import app
 from stc_tests.contract import ContractError, UnsupportedVersion, validate
 from stc_tests.reader import read_application
@@ -84,3 +85,29 @@ def test_default_folders_come_from_the_environment(
 
 def test_needs_an_application_or_all(specs: Path) -> None:
     assert runner.invoke(app, ["check", "--specs", str(specs)]).exit_code == 2
+
+
+def test_env_file_sets_what_is_not_set(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    env = tmp_path / ".env"
+    lines = [
+        "# comment",
+        "STC_TESTS_X_MODEL=some-model",
+        'export STC_TESTS_X_KEY="quoted"',
+        "STC_TESTS_X_SET=from-file",
+    ]
+    env.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    # setenv registers each name with monkeypatch, so the test leaves the environment as it was
+    monkeypatch.setenv("STC_TESTS_X_MODEL", "x")
+    monkeypatch.setenv("STC_TESTS_X_KEY", "x")
+    monkeypatch.delenv("STC_TESTS_X_MODEL")
+    monkeypatch.delenv("STC_TESTS_X_KEY")
+    monkeypatch.setenv("STC_TESTS_X_SET", "from-shell")
+    names = settings.load_env_file(env)
+    assert sorted(names) == ["STC_TESTS_X_KEY", "STC_TESTS_X_MODEL"]
+    assert os.environ["STC_TESTS_X_KEY"] == "quoted"
+    assert os.environ["STC_TESTS_X_SET"] == "from-shell"
+
+
+def test_a_missing_env_file_is_an_error(tmp_path: Path) -> None:
+    result = runner.invoke(app, ["--env-file", str(tmp_path / "nope"), "check", "--all"])
+    assert result.exit_code == 2

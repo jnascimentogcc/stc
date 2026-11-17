@@ -30,8 +30,21 @@ def _version(value: bool) -> None:
 @app.callback()
 def main(
     version: Annotated[bool, typer.Option("--version", callback=_version, is_eager=True)] = False,
+    env_file: Annotated[
+        Path | None,
+        typer.Option(
+            "--env-file",
+            envvar="STC_ENV_FILE",
+            help="Read settings (STC_TESTS_LLM_MODEL, OPENAI_API_KEY, ...) from this file.",
+        ),
+    ] = None,
 ) -> None:
     """Prepare tests from the specifications STC writes."""
+    if env_file is not None:
+        if not env_file.is_file():
+            typer.echo(f"{env_file}: no such file", err=True)
+            raise typer.Exit(2)
+        settings.load_env_file(env_file)
 
 
 def _targets(specs: Path, application: str | None, all_: bool) -> list[str]:
