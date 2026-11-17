@@ -1,0 +1,14 @@
+{
+  "schema": "stc.spec-index/1",
+  "application": "a",
+  "code_version": null,
+  "generated_at": "2026-11-17T10:00:00Z",
+  "features": [
+    {
+      "slug": "x",
+      "title": "X",
+      "page": "features/x.md",
+      "sidecar": "features/x.md"
+    }
+  ]
+}

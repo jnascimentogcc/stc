@@ -42,8 +42,10 @@ stc = "stc.cli:app"
 [dependency-groups]
 dev = [
     "httpx2>=2.16",
+    "jsonschema>=4.23",
     "mypy>=1.13",
     "types-defusedxml>=0.7",
+    "types-jsonschema>=4.23",
     "pytest>=8.3",
     "ruff>=0.8",
     "types-pyyaml>=6.0.12.20260906",

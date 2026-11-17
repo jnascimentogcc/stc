@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "STC specification index",
+  "description": "Contract stc.spec-index/1 (SPC-10): `_specs.json`, one per application, lists the feature specifications in migration order. Same compatibility rules as the sidecar.",
+  "type": "object",
+  "required": ["schema", "application", "code_version", "generated_at", "features"],
+  "properties": {
+    "schema": { "type": "string", "pattern": "^stc\\.spec-index/1(\\.[0-9]+)?$" },
+    "application": { "type": "string", "minLength": 1 },
+    "code_version": { "type": ["string", "null"] },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "features": {
+      "description": "In migration order (SPC-05).",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["slug", "title", "page", "sidecar"],
+        "properties": {
+          "slug": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+          "title": { "type": "string", "minLength": 1 },
+          "page": { "type": "string", "minLength": 1 },
+          "sidecar": { "type": "string", "pattern": "\\.spec\\.json$" }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "schema": "stc.spec-index/1",
+  "application": "cobol-bank",
+  "code_version": "a1b2c3d",
+  "generated_at": "2026-11-17T10:00:00Z",
+  "features": [
+    {
+      "slug": "program-search-example",
+      "title": "Keyed table search",
+      "page": "features/program-search-example.md",
+      "sidecar": "features/program-search-example.spec.json"
+    }
+  ]
+}

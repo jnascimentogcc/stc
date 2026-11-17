@@ -1,0 +1,206 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "STC specification sidecar",
+  "description": "Contract stc.spec-sidecar/1 (SPC-10..SPC-15): the structured items of one feature specification, written by `stc spec` next to the markdown page and read by other applications. Consumers must refuse a major version they do not know; unknown properties are ignored (a new optional property only raises the minor version).",
+  "type": "object",
+  "required": [
+    "schema",
+    "application",
+    "feature",
+    "code_version",
+    "generated_at",
+    "stack_sha256",
+    "page",
+    "items",
+    "retired",
+    "gaps",
+    "manual_blocks"
+  ],
+  "properties": {
+    "schema": {
+      "description": "Contract name and version: major, optionally followed by .minor.",
+      "type": "string",
+      "pattern": "^stc\\.spec-sidecar/1(\\.[0-9]+)?$"
+    },
+    "application": { "type": "string", "minLength": 1 },
+    "feature": {
+      "type": "object",
+      "required": ["slug", "title"],
+      "properties": {
+        "slug": { "$ref": "#/$defs/slug" },
+        "title": { "type": "string", "minLength": 1 }
+      }
+    },
+    "code_version": {
+      "description": "Version of the indexed legacy code the specification was written from (null when the application is not under Git).",
+      "type": ["string", "null"]
+    },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "stack_sha256": {
+      "description": "Hash of the target stack text; changing the stack rewrites the specification (SPC-02).",
+      "$ref": "#/$defs/sha256"
+    },
+    "page": {
+      "type": "object",
+      "required": ["path", "inputs_sha256"],
+      "properties": {
+        "path": { "description": "The markdown page this sidecar belongs to.", "type": "string", "minLength": 1 },
+        "inputs_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "items": { "type": "array", "items": { "$ref": "#/$defs/item" } },
+    "retired": {
+      "description": "IDs that existed in a previous generation and no longer do. They are never reused (SPC-12).",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "retired_in"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*/[A-Z]{2}-[0-9]{2,}$" },
+          "retired_in": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "gaps": { "type": "array", "items": { "$ref": "#/$defs/gap" } },
+    "manual_blocks": {
+      "description": "Blocks written by maintainers between stc:manual markers; their content takes precedence over generated text.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["key", "text_sha256"],
+        "properties": {
+          "key": { "type": "string", "minLength": 1 },
+          "text_sha256": { "$ref": "#/$defs/sha256" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "slug": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "citation": {
+      "type": "object",
+      "required": ["file", "start", "end"],
+      "properties": {
+        "file": { "description": "Path relative to the application's folder.", "type": "string", "minLength": 1 },
+        "start": { "type": "integer", "minimum": 1 },
+        "end": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "item": {
+      "type": "object",
+      "required": ["id", "kind", "part", "text", "text_sha256", "confidence", "citations", "status", "origin"],
+      "properties": {
+        "id": { "description": "<feature>/<KIND>-<nn>; the number is a label, not a position (SPC-12).", "type": "string" },
+        "kind": {
+          "enum": ["requirement", "rule", "data", "interface", "acceptance", "task", "risk", "screen", "api"]
+        },
+        "part": {
+          "enum": [
+            "spec-requirements",
+            "spec-rules",
+            "spec-data",
+            "spec-interfaces",
+            "spec-acceptance",
+            "spec-tasks",
+            "spec-risks",
+            "spec-screens",
+            "spec-api"
+          ]
+        },
+        "text": { "type": "string", "minLength": 1 },
+        "text_sha256": { "description": "Hash of the text with whitespace and letter case normalized.", "$ref": "#/$defs/sha256" },
+        "confidence": { "enum": ["high", "medium", "low"] },
+        "citations": { "type": "array", "items": { "$ref": "#/$defs/citation" } },
+        "status": { "description": "Against the previous generation.", "enum": ["new", "unchanged", "changed"] },
+        "origin": { "enum": ["generated", "manual"] },
+        "scenario": {
+          "type": "object",
+          "required": ["given", "when", "then"],
+          "properties": {
+            "given": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+            "when": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 },
+            "then": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "requirement" } } },
+          "then": { "properties": { "part": { "const": "spec-requirements" }, "id": { "pattern": "^[a-z0-9][a-z0-9-]*/FR-[0-9]{2,}$" } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "rule" } } },
+          "then": { "properties": { "part": { "const": "spec-rules" }, "id": { "pattern": "^[a-z0-9][a-z0-9-]*/BR-[0-9]{2,}$" } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "data" } } },
+          "then": { "properties": { "part": { "const": "spec-data" }, "id": { "pattern": "^[a-z0-9][a-z0-9-]*/DM-[0-9]{2,}$" } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "interface" } } },
+          "then": { "properties": { "part": { "const": "spec-interfaces" }, "id": { "pattern": "^[a-z0-9][a-z0-9-]*/IF-[0-9]{2,}$" } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "acceptance" } } },
+          "then": {
+            "required": ["scenario"],
+            "properties": { "part": { "const": "spec-acceptance" }, "id": { "pattern": "^[a-z0-9][a-z0-9-]*/AC-[0-9]{2,}$" } }
+          },
+          "else": { "not": { "required": ["scenario"] } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "task" } } },
+          "then": { "properties": { "part": { "const": "spec-tasks" }, "id": { "pattern": "^[a-z0-9][a-z0-9-]*/TK-[0-9]{2,}$" } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "risk" } } },
+          "then": { "properties": { "part": { "const": "spec-risks" }, "id": { "pattern": "^[a-z0-9][a-z0-9-]*/RK-[0-9]{2,}$" } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "screen" } } },
+          "then": { "properties": { "part": { "const": "spec-screens" }, "id": { "pattern": "^[a-z0-9][a-z0-9-]*/SC-[0-9]{2,}$" } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "api" } } },
+          "then": { "properties": { "part": { "const": "spec-api" }, "id": { "pattern": "^[a-z0-9][a-z0-9-]*/AP-[0-9]{2,}$" } } }
+        },
+        {
+          "description": "Generated statements always cite the legacy code (SPC-04); a manual one may not.",
+          "if": { "properties": { "origin": { "const": "generated" } } },
+          "then": { "properties": { "citations": { "minItems": 1 } } }
+        }
+      ]
+    },
+    "gap": {
+      "type": "object",
+      "required": ["id", "part", "text", "triage"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*/GAP-[0-9]{2,}$" },
+        "part": { "type": "string", "pattern": "^spec-[a-z]+$" },
+        "text": { "type": "string", "minLength": 1 },
+        "triage": {
+          "description": "Cross-check against the other sections of the same specification (SPC-14).",
+          "type": "object",
+          "required": ["status", "by"],
+          "properties": {
+            "status": { "enum": ["answered_elsewhere", "open"] },
+            "by": {
+              "description": "IDs of the items that answer the gap.",
+              "type": "array",
+              "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*/[A-Z]{2}-[0-9]{2,}$" }
+            },
+            "model": { "type": "string" }
+          },
+          "allOf": [
+            {
+              "if": { "properties": { "status": { "const": "answered_elsewhere" } } },
+              "then": { "properties": { "by": { "minItems": 1 } } },
+              "else": { "properties": { "by": { "maxItems": 0 } } }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

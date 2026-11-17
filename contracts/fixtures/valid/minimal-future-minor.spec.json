@@ -1,0 +1,20 @@
+{
+  "application": "cobol-bank",
+  "feature": {
+    "slug": "program-search-example",
+    "title": "Keyed table search"
+  },
+  "code_version": "a1b2c3d",
+  "generated_at": "2026-11-17T10:00:00Z",
+  "stack_sha256": "9647f77c4c6f48728a41f96ff9fc88b1f912358f0fb7805927054c5deed488df",
+  "page": {
+    "path": "features/program-search-example.md",
+    "inputs_sha256": "32381523e63197c929b67f793a8098bed0ae3a6fa902634fdbcc6fa4567f3346"
+  },
+  "schema": "stc.spec-sidecar/1.2",
+  "items": [],
+  "retired": [],
+  "gaps": [],
+  "manual_blocks": [],
+  "extra_future_field": true
+}
