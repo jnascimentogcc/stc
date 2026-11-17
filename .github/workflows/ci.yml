@@ -31,6 +31,37 @@ jobs:
       - run: uv run mypy
       - run: uv run pytest
 
+  tests-tool:
+    # The test application's Python tool: its own project, shares only contracts/ with STC.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: stc-tests/tool
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy
+      - run: uv run pytest
+
+  tests-java-spike:
+    # The Java stack spike: reads ../../contracts, runs against its own stub (no network target).
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: stc-tests/spike
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+          cache-dependency-path: stc-tests/spike/pom.xml
+      - run: mvn --batch-mode test
+
   frontend:
     runs-on: ubuntu-latest
     defaults:
