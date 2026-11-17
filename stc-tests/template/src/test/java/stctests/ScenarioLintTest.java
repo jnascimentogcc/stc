@@ -10,6 +10,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import stctests.catalog.ActionCatalog;
 import stctests.lint.ScenarioLint;
 import stctests.lint.ScenarioLint.Violation;
 import stctests.support.Sidecar;
@@ -28,11 +29,12 @@ class ScenarioLintTest {
   void everyScenarioFollowsTheRules() throws IOException {
     Sidecar sidecar = Sidecar.loadAll(SPECS);
     assertFalse(sidecar.active().isEmpty(), "no specification found in " + SPECS);
+    List<String> actions = ActionCatalog.expressions(ActionCatalog.FILE);
     List<String> problems = new ArrayList<>();
     try (var files = Files.walk(FEATURES)) {
       for (Path file : files.filter(p -> p.toString().endsWith(".feature")).sorted().toList()) {
         String text = Files.readString(file, StandardCharsets.UTF_8);
-        for (Violation v : ScenarioLint.check(text, sidecar)) {
+        for (Violation v : ScenarioLint.check(text, sidecar, actions)) {
           problems.add(file + ": [" + v.rule() + "] " + v.scenario() + ": " + v.detail());
         }
       }

@@ -1,5 +1,7 @@
 package stctests.lint;
 
+import io.cucumber.cucumberexpressions.ExpressionFactory;
+import io.cucumber.cucumberexpressions.ParameterTypeRegistry;
 import io.cucumber.gherkin.GherkinParser;
 import io.cucumber.messages.types.Envelope;
 import io.cucumber.messages.types.Feature;
@@ -14,13 +16,14 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.regex.Pattern;
 import stctests.support.Sidecar;
 
 /**
- * A rule of the scenario linter: runs on a pull request, with no model and no STC, only the
- * Gherkin parser and the sidecar. The rules here are the ones that can be checked against the
- * sidecar: traceability and the shape of a scenario.
+ * The scenario linter: runs on a pull request, with no model and no STC, only the Gherkin parser,
+ * the sidecars and the action catalog. The rules are the ones that can be checked mechanically:
+ * traceability, the shape of a scenario, and that every step is an action that exists.
  */
 public final class ScenarioLint {
 
@@ -28,10 +31,21 @@ public final class ScenarioLint {
 
   private static final Pattern TRACE = Pattern.compile("@([a-z0-9][a-z0-9-]*/[A-Z]{2}-[0-9]{2,})");
   private static final Pattern CASE_ID = Pattern.compile("@TC-[0-9]{4}");
+  private static final ExpressionFactory EXPRESSIONS =
+      new ExpressionFactory(new ParameterTypeRegistry(Locale.ENGLISH));
 
   private ScenarioLint() {}
 
+  /** Traceability and shape rules only. */
   public static List<Violation> check(String featureText, Sidecar sidecar) {
+    return check(featureText, sidecar, null);
+  }
+
+  /**
+   * All rules. With {@code actions} (the step expressions of catalog/actions.json) every step must
+   * match one of them; with {@code null} that rule is skipped.
+   */
+  public static List<Violation> check(String featureText, Sidecar sidecar, List<String> actions) {
     List<Violation> found = new ArrayList<>();
     GherkinParser parser =
         GherkinParser.builder().includeSource(false).includePickles(false).build();
@@ -51,13 +65,15 @@ public final class ScenarioLint {
         continue;
       }
       for (FeatureChild child : feature.getChildren()) {
-        child.getScenario().ifPresent(s -> checkScenario(s, sidecar, found));
+        child.getBackground().ifPresent(b -> checkSteps("Background", b.getSteps(), actions, found));
+        child.getScenario().ifPresent(s -> checkScenario(s, sidecar, actions, found));
       }
     }
     return found;
   }
 
-  private static void checkScenario(Scenario scenario, Sidecar sidecar, List<Violation> found) {
+  private static void checkScenario(
+      Scenario scenario, Sidecar sidecar, List<String> actions, List<Violation> found) {
     String name = scenario.getName();
     List<String> traces = new ArrayList<>();
     boolean hasCaseId = false;
@@ -87,6 +103,21 @@ public final class ScenarioLint {
             .anyMatch(type -> type.filter(StepKeywordType.OUTCOME::equals).isPresent());
     if (!asserts) {
       found.add(new Violation(name, "assertion", "no Then step"));
+    }
+    checkSteps(name, scenario.getSteps(), actions, found);
+  }
+
+  private static void checkSteps(
+      String scenario, List<Step> steps, List<String> actions, List<Violation> found) {
+    if (actions == null) {
+      return;
+    }
+    for (Step step : steps) {
+      boolean known =
+          actions.stream().anyMatch(a -> EXPRESSIONS.createExpression(a).match(step.getText()) != null);
+      if (!known) {
+        found.add(new Violation(scenario, "unknown-step", "no action matches: " + step.getText()));
+      }
     }
   }
 }

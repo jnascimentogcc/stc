@@ -1,0 +1,86 @@
+{
+  "schema" : "stc.action-catalog/1",
+  "actions" : [ {
+    "keyword" : "When",
+    "expression" : "I search the keyed table for the id {string}",
+    "description" : "Searches the keyed table by the first id.",
+    "layer" : "domain",
+    "implementation" : "SearchSteps.searchById",
+    "parameters" : [ {
+      "name" : "id",
+      "type" : "String"
+    } ]
+  }, {
+    "keyword" : "When",
+    "expression" : "I search the keyed table for the ids {string}, {string} and {string}",
+    "description" : "Searches the keyed table by the three ids together.",
+    "layer" : "domain",
+    "implementation" : "SearchSteps.searchByThreeIds",
+    "parameters" : [ {
+      "name" : "id1",
+      "type" : "String"
+    }, {
+      "name" : "id2",
+      "type" : "String"
+    }, {
+      "name" : "id3",
+      "type" : "String"
+    } ]
+  }, {
+    "keyword" : "When",
+    "expression" : "I search the unordered table for the id {string}",
+    "description" : "Searches the unordered table sequentially by id.",
+    "layer" : "domain",
+    "implementation" : "SearchSteps.searchSequentially",
+    "parameters" : [ {
+      "name" : "id",
+      "type" : "String"
+    } ]
+  }, {
+    "keyword" : "Then",
+    "expression" : "the keyed result is {string}",
+    "description" : "Checks that the keyed search found nothing and showed the given message.",
+    "layer" : "domain",
+    "implementation" : "SearchSteps.keyedResult",
+    "parameters" : [ {
+      "name" : "message",
+      "type" : "String"
+    } ]
+  }, {
+    "keyword" : "Given",
+    "expression" : "the program SEARCH-EXAMPLE is ready with the test data",
+    "description" : "Checks that the program under test is up and loaded with the test data.",
+    "layer" : "domain",
+    "implementation" : "SearchSteps.ready",
+    "parameters" : [ ]
+  }, {
+    "keyword" : "Then",
+    "expression" : "the record found has the ids {string}, {string} and {string} and the name {string}",
+    "description" : "Checks that the keyed search found the record with the given ids and name.",
+    "layer" : "domain",
+    "implementation" : "SearchSteps.recordFound",
+    "parameters" : [ {
+      "name" : "id1",
+      "type" : "String"
+    }, {
+      "name" : "id2",
+      "type" : "String"
+    }, {
+      "name" : "id3",
+      "type" : "String"
+    }, {
+      "name" : "name",
+      "type" : "String"
+    } ]
+  }, {
+    "keyword" : "Then",
+    "expression" : "the sequential result is {string}",
+    "description" : "Checks the message of the sequential search.",
+    "layer" : "domain",
+    "implementation" : "SearchSteps.sequentialResult",
+    "parameters" : [ {
+      "name" : "message",
+      "type" : "String"
+    } ]
+  } ]
+}

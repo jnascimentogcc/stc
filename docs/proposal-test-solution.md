@@ -199,7 +199,7 @@ Feature: Keyed table search
 | Client domain | Business actions, such as "log in" or "add product to cart", with page objects and API clients | Automation engineers, per client |
 | Data | Versioned datasets, data generators, credentials via GitHub Secrets | Team and client |
 
-Principles: semantic locators (role, label, test-id) instead of fragile XPath, and each action with a signature and a natural-language description. A generator creates `action-catalog.json` from the code, and the AI only binds steps to actions that exist in it.
+Principles: semantic locators (role, label, test-id) instead of fragile XPath, and each action with a signature and a natural-language description. A generator creates `actions.json` from the code (the `@Action` annotation of each step definition), a test fails when it is out of date, and the linter rejects a step that matches no action in it, and the AI only binds steps to actions that exist in it.
 
 **When an action is missing,** the AI records the gap, drafts an implementation proposal and opens a separate PR for an automation engineer to review. New code is rare, small and always reviewed by someone who programs.
 
