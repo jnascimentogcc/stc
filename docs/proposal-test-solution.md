@@ -207,7 +207,15 @@ Principles: semantic locators (role, label, test-id) instead of fragile XPath, a
 
 The tool uses a single test stack for all clients, with execution on the client's GitHub Actions.
 
-**Proposed stack:** Cucumber-JVM, Playwright (Java), REST Assured and JUnit 5, in a single Java project. In favor, there is one language for API and web, and it is the one the group that programs already knows. Against, Playwright in Java has fewer examples than the TypeScript version. The alternative would be Playwright Test with `playwright-bdd`, and the final decision is up to the team.
+**Stack (decided):** Cucumber-JVM, Playwright (Java), REST Assured and JUnit 5, in a single Java project. Java is the language the group that programs already knows (confirmed), there is one language for API, web, database and files, and Cucumber-JVM is the reference implementation of Gherkin with mature reports (Allure). The pilot is API and file testing (a COBOL console program behind REST and a PHP or Node.js program over HTTP), where REST Assured and JDBC fit well. The cost is that Playwright in Java has fewer examples than the TypeScript version, which matters when web tests enter. Because the scenarios are Gherkin and the steps only bind them to actions, the web part can be revisited then (for example with `playwright-bdd`) without rewriting the scenarios.
+
+**Two layers.** What runs on the client's GitHub Actions is Java and needs nothing of ours: the tests, the scenario linter and the generator of `actions.json` live in the Java project, so `validate-scenarios` runs without our tool. What the consultancy runs is a separate tool in Python, next to STC: it reads the sidecar, triages the gaps, designs the cases, drafts the interface mapping and opens the pull requests. It cannot import STC, so it has its own minimal LLM client (one call with a JSON Schema reply); that small duplication is accepted to keep the two independent.
+
+```
+stc-tests/
+  tool/       # Python: reader, agents, mapping, pull requests
+  template/   # Java project delivered to the client: actions, linter, caller workflows
+```
 
 **Test repository**
 
@@ -381,11 +389,11 @@ It measures requirement coverage, case approval rate, divergences found, injecte
 
 ## Open decisions and next steps
 
-Today there are fourteen points to decide or confirm before starting the pilot.
+Today there are thirteen points to decide or confirm before starting the pilot.
 
 **Decisions**
 
-- [ ] Test stack: Cucumber-JVM with Playwright in Java, or Playwright Test in TypeScript.
+- [x] Test stack: Cucumber-JVM with Playwright in Java (the group that programs knows Java); the tool itself is in Python.
 - [ ] Scenario language: Portuguese by default, or English, and whether it is configurable per client.
 - [ ] Jira convention: a "Test Case" ticket type or a standard label, and whether clients' projects have restrictions.
 - [ ] LLM provider and contractual terms (zero retention, DPA).
@@ -410,4 +418,4 @@ Today there are fourteen points to decide or confirm before starting the pilot.
 2. Share one spec per language (PHP, Node.js and Python) to validate the sidecar and the reader.
 3. Choose the two pilot programs, one COBOL and one in another language with an HTTP interface.
 4. Define the interface mapping for those two programs with the migration team.
-5. Build the foundation: the test tool as a sibling directory with its own CLI (`--specs`, `--output`), project standard, initial action library and CI template.
+5. Build the foundation: the test tool (Python) as a sibling directory with its own CLI (`--specs`, `--output`), the Java project template, initial action library and CI template.
