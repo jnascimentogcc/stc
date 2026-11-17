@@ -3,6 +3,7 @@ Given/When/Then, and the files the store writes. No database: the plan is built 
 
 import asyncio
 import json
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -10,17 +11,25 @@ import pytest
 from jsonschema import Draft202012Validator
 
 from stc.catalog.context import SectionContext
-from stc.catalog.model import Claim, Evidence, SectionResult
+from stc.catalog.model import (
+    SCENARIO_JSON_SCHEMA,
+    Claim,
+    Evidence,
+    Scenario,
+    SectionResult,
+    parse_scenario_output,
+)
 from stc.docs.model import Page, Part, Plan
 from stc.docs.store import Prepared, generate_and_store
+from stc.providers import LLMResponse, Message, ProviderError, ToolSpec, Usage
 from stc.spec.sidecar import (
     build_sidecar,
+    hide_answered_gaps,
     is_spec_page,
-    parse_scenario,
     sidecar_path,
     text_sha256,
 )
-from test_docs import FakeLLM, reply
+from stc.spec.triage import TRIAGE_SCHEMA, apply_reply
 
 CONTRACTS = Path(__file__).resolve().parent.parent / "contracts"
 SIDECAR_SCHEMA = json.loads((CONTRACTS / "spec-sidecar.schema.json").read_text(encoding="utf-8"))
@@ -40,6 +49,11 @@ def _page(*part_ids: str, slug: str = "job-x") -> Page:
 
 def _claim(text: str, start: int = 1, end: int = 5, confidence: str = "high") -> Claim:
     return Claim(text, confidence, [Evidence("src/A.cbl", start, end)])  # type: ignore[arg-type]
+
+
+def _scenario(text: str, start: int = 1, end: int = 5) -> Claim:
+    scenario = Scenario(["a loan"], ["it is paid"], ["it is closed"])
+    return Claim(scenario.text(), "high", [Evidence("src/A.cbl", start, end)], scenario)
 
 
 def _result(part: str, *claims: Claim, gaps: tuple[str, ...] = ()) -> SectionResult:
@@ -82,45 +96,6 @@ def test_only_specification_feature_pages_have_a_sidecar() -> None:
     assert sidecar_path("features/job-x.md") == "features/job-x.spec.json"
 
 
-@pytest.mark.parametrize(
-    ("text", "expected"),
-    [
-        (
-            "Given the table has data, when the ids 0001, 0101 and 0499 are searched, then the "
-            'result is "Item not found."',
-            ("the table has data", "the ids 0001, 0101 and 0499 are searched",
-             'the result is "Item not found."'),
-        ),
-        (
-            "Given a loan of 100. When it is paid in full. Then the balance is 0.",
-            ("a loan of 100", "it is paid in full", "the balance is 0"),
-        ),
-        ("When the file is empty, then no record is written.", (None, "the file is empty",
-                                                               "no record is written")),
-    ],
-)  # fmt: skip
-def test_scenarios_are_split_into_given_when_then(
-    text: str, expected: tuple[str | None, str, str]
-) -> None:
-    scenario = parse_scenario(text)
-    assert scenario is not None
-    assert scenario["given"] == ([expected[0]] if expected[0] else [])
-    assert scenario["when"] == [expected[1]] and scenario["then"] == [expected[2]]
-
-
-@pytest.mark.parametrize(
-    "text",
-    [
-        "The system rejects an empty id.",
-        "Given a record, then it is shown.",
-        "Then it is shown, when the id is found.",
-        "When the id is found, then",
-    ],
-)
-def test_text_that_is_not_a_scenario_is_not_split(text: str) -> None:
-    assert parse_scenario(text) is None
-
-
 # --- first generation ------------------------------------------------------------------------
 
 
@@ -134,9 +109,7 @@ def test_first_generation_numbers_each_kind_and_validates() -> None:
                 _claim("The system must write.", 4, 6),
             ),
             "spec-rules": _result("spec-rules", _claim("Interest is 2%.", 7, 8)),
-            "spec-acceptance": _result(
-                "spec-acceptance", _claim("Given a loan, when it is paid, then it is closed.", 9, 9)
-            ),
+            "spec-acceptance": _result("spec-acceptance", _scenario("x", 9, 9)),
         },
     )  # fmt: skip
     assert _ids(document, "requirement") == ["job-x/FR-01", "job-x/FR-02"]
@@ -285,14 +258,14 @@ def test_gaps_keep_their_ids_and_resolved_ones_disappear_without_reuse() -> None
     assert [g["id"] for g in third["gaps"]] == ["job-x/GAP-02", "job-x/GAP-03"]
 
 
-def test_an_acceptance_text_that_is_not_a_scenario_becomes_a_gap() -> None:
+def test_an_acceptance_statement_without_fields_becomes_a_gap() -> None:
     page = _page("spec-acceptance")
     document = _build(
         page,
         {"spec-acceptance": _result("spec-acceptance", _claim("It must be fast.", 1, 2))},
     )
     assert document["items"] == []
-    assert document["gaps"][0]["text"].startswith("Not in Given/When/Then form")
+    assert document["gaps"][0]["text"].startswith("Not given as a scenario")
     assert document["gaps"][0]["part"] == "spec-acceptance"
 
 
@@ -306,7 +279,7 @@ def _prepared(tmp_path: Path, plan: Plan, stale: list[Page]) -> Prepared:
     )  # fmt: skip
 
 
-def _run(tmp_path: Path, plan: Plan, llm: FakeLLM | None) -> Prepared:
+def _run(tmp_path: Path, plan: Plan, llm: "ScriptLLM | None") -> Prepared:
     prepared = _prepared(tmp_path, plan, list(plan.pages))
     asyncio.run(generate_and_store(llm, prepared, language="English"))
     return prepared
@@ -319,7 +292,7 @@ def test_the_store_writes_a_sidecar_per_feature_and_an_index(tmp_path: Path) -> 
         Page("index.md", "Index", "Overview", [_part("spec-strategy")]),
     ]
     plan = Plan("app", "v9", FILES, pages, stack_sha256="f" * 64)
-    llm = FakeLLM(reply(("The system must run.", "high", [("src/A.cbl", 3, 4)]), gaps=["Why?"]))
+    llm = ScriptLLM(_section(gaps=("Why?",)))
     _run(tmp_path, plan, llm)
     folder = tmp_path / "app"
     for slug in ("job-a", "job-b"):
@@ -335,7 +308,7 @@ def test_the_store_writes_a_sidecar_per_feature_and_an_index(tmp_path: Path) -> 
 
 def test_a_second_run_with_the_same_answers_keeps_the_ids(tmp_path: Path) -> None:
     plan = Plan("app", "v9", FILES, [_page("spec-requirements")], stack_sha256="f" * 64)
-    llm = FakeLLM(reply(("The system must run.", "high", [("src/A.cbl", 3, 4)])))
+    llm = ScriptLLM(_section())
     _run(tmp_path, plan, llm)
     path = tmp_path / "app" / "features" / "job-x.spec.json"
     first = json.loads(path.read_text("utf-8"))
@@ -355,6 +328,211 @@ def test_a_static_run_does_not_invent_a_sidecar(tmp_path: Path) -> None:
 
 def test_documentation_pages_get_no_sidecar(tmp_path: Path) -> None:
     plan = Plan("app", "v9", FILES, [_page("summary", "flow")])  # no stack: not a specification
-    _run(tmp_path, plan, FakeLLM())
+    _run(tmp_path, plan, ScriptLLM(_section()))
     folder = tmp_path / "app"
     assert not list(folder.rglob("*.spec.json")) and not (folder / "_specs.json").exists()
+
+
+# --- scenarios as fields (SPC-13) ------------------------------------------------------------
+
+
+def test_a_scenario_reads_as_one_sentence() -> None:
+    assert Scenario(["a loan", "a rate"], ["it is paid"], ["it closes"]).text() == (
+        "Given a loan and a rate, when it is paid, then it closes."
+    )
+    assert Scenario([], ["the file is empty"], ["nothing is written"]).text() == (
+        "When the file is empty, then nothing is written."
+    )
+
+
+def _scenario_reply(*scenarios: dict[str, list[str]]) -> str:
+    claims = [
+        {
+            "scenario": s,
+            "confidence": "high",
+            "evidence": [{"file": "src/A.cbl", "start_line": 1, "end_line": 2}],
+        }
+        for s in scenarios
+    ]
+    return json.dumps({"claims": claims, "gaps": []})
+
+
+def test_the_scenario_reply_gives_the_fields_and_a_text_built_from_them() -> None:
+    raw = _scenario_reply(
+        {"given": ["a loan of 100"], "when": ["it is paid in full"], "then": ["the balance is 0"]}
+    )
+    claims, gaps = parse_scenario_output(raw)
+    assert gaps == [] and len(claims) == 1
+    assert claims[0].text == "Given a loan of 100, when it is paid in full, then the balance is 0."
+    assert claims[0].scenario == Scenario(
+        ["a loan of 100"], ["it is paid in full"], ["the balance is 0"]
+    )
+
+
+@pytest.mark.parametrize(
+    "scenario",
+    [{"given": [], "when": [], "then": ["x"]}, {"given": [], "when": ["x"], "then": []}, {}],
+)
+def test_a_scenario_needs_a_when_and_a_then(scenario: dict[str, list[str]]) -> None:
+    with pytest.raises(ValueError):
+        parse_scenario_output(_scenario_reply(scenario))
+
+
+def test_the_schema_asks_for_the_three_lists_and_no_free_text() -> None:
+    item = SCENARIO_JSON_SCHEMA["properties"]["claims"]["items"]
+    assert "text" not in item["properties"] and "scenario" in item["required"]
+    assert set(item["properties"]["scenario"]["required"]) == {"given", "when", "then"}
+
+
+# --- gap cross-check (SPC-14) ----------------------------------------------------------------
+
+
+def _with_gaps() -> dict[str, Any]:
+    page = _page("spec-requirements", "spec-risks")
+    return _build(
+        page,
+        {
+            "spec-requirements": _result(
+                "spec-requirements", _claim("The system must load three records.", 1, 3)
+            ),
+            "spec-risks": _result(
+                "spec-risks", _claim("Duplicate keys are not defined.", 5, 6),
+                gaps=("What records are loaded?", "Which key wins?"),
+            ),
+        },
+    )  # fmt: skip
+
+
+def test_a_gap_is_answered_only_by_statements_that_exist() -> None:
+    document = _with_gaps()
+    reply = {
+        "gaps": [
+            {"id": "job-x/GAP-01", "answered_by": ["job-x/FR-01", "job-x/FR-99"]},
+            {"id": "job-x/GAP-02", "answered_by": ["job-x/RK-01"]},  # a risk is not an answer
+        ]
+    }
+    assert apply_reply(document, json.dumps(reply), "m")
+    first, second = document["gaps"]
+    assert first["triage"] == {"status": "answered_elsewhere", "by": ["job-x/FR-01"], "model": "m"}
+    assert second["triage"] == {"status": "open", "by": [], "model": "m"}
+    Draft202012Validator(SIDECAR_SCHEMA).validate(document)
+
+
+def test_a_reply_that_cannot_be_read_changes_nothing() -> None:
+    document = _with_gaps()
+    before = json.dumps(document)
+    assert not apply_reply(document, "not json", "m")
+    assert not apply_reply(document, json.dumps({"gaps": [{"id": "x"}]}), "m")
+    assert json.dumps(document) == before
+
+
+def test_a_gap_the_model_did_not_mention_stays_open_but_is_marked_checked() -> None:
+    document = _with_gaps()
+    assert apply_reply(document, json.dumps({"gaps": []}), "m")
+    assert [g["triage"]["status"] for g in document["gaps"]] == ["open", "open"]
+    assert {g["triage"]["model"] for g in document["gaps"]} == {"m"}
+
+
+def test_the_page_lists_only_the_open_gaps() -> None:
+    page = _page("spec-risks")
+    result = _result("spec-risks", gaps=("What records are loaded?", "Which?"))
+    document = _build(page, {"spec-risks": result})
+    document["gaps"][0]["triage"] = {"status": "answered_elsewhere", "by": ["job-x/FR-01"]}
+    hide_answered_gaps(page, {page.key("spec-risks"): result}, document)
+    assert result.gaps == ["Which?"]
+
+
+# --- the store with a model ------------------------------------------------------------------
+
+
+class ScriptLLM:
+    """Answers each kind of request: a scenario part, the gap cross-check, any other part."""
+
+    provider = "fake"
+    model = "fake-model"
+
+    def __init__(
+        self, section: str, triage: str = '{"gaps": []}', fail_triage: bool = False
+    ) -> None:
+        self.section, self.triage, self.fail_triage = section, triage, fail_triage
+        self.calls: list[str] = []
+
+    async def complete(
+        self,
+        messages: Sequence[Message],
+        *,
+        tools: Sequence[ToolSpec] | None = None,
+        response_schema: dict[str, Any] | None = None,
+    ) -> LLMResponse:
+        if response_schema is TRIAGE_SCHEMA:
+            self.calls.append("triage")
+            if self.fail_triage:
+                raise ProviderError("fake", "boom", retryable=False)
+            return LLMResponse(text=self.triage, usage=Usage(7, 3))
+        if response_schema is SCENARIO_JSON_SCHEMA:
+            self.calls.append("scenario")
+            raw = _scenario_reply({"given": ["data"], "when": ["run"], "then": ["done"]})
+            return LLMResponse(text=raw, usage=Usage(10, 5))
+        self.calls.append("section")
+        return LLMResponse(text=self.section, usage=Usage(10, 5))
+
+    def stream(self, messages: Sequence[Message], *, tools: Sequence[ToolSpec] | None = None):  # type: ignore[no-untyped-def]
+        raise NotImplementedError
+
+
+def _section(text: str = "The system must run.", gaps: tuple[str, ...] = ()) -> str:
+    claim = {
+        "text": text,
+        "confidence": "high",
+        "evidence": [{"file": "src/A.cbl", "start_line": 3, "end_line": 4}],
+    }
+    return json.dumps({"claims": [claim], "gaps": list(gaps)})
+
+
+def _read(tmp_path: Path, name: str) -> Any:
+    return json.loads((tmp_path / "app" / "features" / name).read_text("utf-8"))
+
+
+def test_a_gap_another_section_answers_leaves_the_page_and_keeps_its_answer(
+    tmp_path: Path,
+) -> None:
+    page = _page("spec-requirements", "spec-risks")
+    plan = Plan("app", "v9", FILES, [page], stack_sha256="f" * 64)
+    triage = json.dumps({"gaps": [{"id": "job-x/GAP-01", "answered_by": ["job-x/FR-01"]}]})
+    llm = ScriptLLM(_section(gaps=("What does it load?",)), triage)
+    prepared = _prepared(tmp_path, plan, [page])
+    outcome = asyncio.run(generate_and_store(llm, prepared, language="English"))
+    document = _read(tmp_path, "job-x.spec.json")
+    by_part = {g["part"]: g["triage"]["status"] for g in document["gaps"]}
+    assert by_part == {"spec-requirements": "answered_elsewhere", "spec-risks": "open"}
+    text = (tmp_path / "app" / "features" / "job-x.md").read_text("utf-8")
+    assert text.count("What does it load?") == 1  # only the gap nothing answered
+    assert llm.calls.count("triage") == 1  # one call per page, not per gap
+    assert outcome.input_tokens == 10 * 2 + 7 and outcome.output_tokens == 5 * 2 + 3
+
+
+def test_a_failed_cross_check_leaves_the_gaps_open_and_unchecked(tmp_path: Path) -> None:
+    page = _page("spec-requirements")
+    plan = Plan("app", "v9", FILES, [page], stack_sha256="f" * 64)
+    llm = ScriptLLM(_section(gaps=("Why?",)), fail_triage=True)
+    prepared = _prepared(tmp_path, plan, [page])
+    outcome = asyncio.run(generate_and_store(llm, prepared, language="English"))
+    assert outcome.status == "complete"
+    document = _read(tmp_path, "job-x.spec.json")
+    assert document["gaps"][0]["triage"] == {"status": "open", "by": []}
+
+
+def test_acceptance_scenarios_come_from_the_fields(tmp_path: Path) -> None:
+    page = _page("spec-acceptance")
+    plan = Plan("app", "v9", FILES, [page], stack_sha256="f" * 64)
+    llm = ScriptLLM(_section())
+    asyncio.run(generate_and_store(llm, _prepared(tmp_path, plan, [page]), language="English"))
+    document = _read(tmp_path, "job-x.spec.json")
+    Draft202012Validator(SIDECAR_SCHEMA).validate(document)
+    assert document["items"][0]["scenario"] == {
+        "given": ["data"],
+        "when": ["run"],
+        "then": ["done"],
+    }
+    text = (tmp_path / "app" / "features" / "job-x.md").read_text("utf-8")
+    assert "Given data, when run, then done." in text

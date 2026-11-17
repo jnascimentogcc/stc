@@ -13,7 +13,6 @@ is never used twice, even after its statement is gone (the highest numbers are k
 
 import difflib
 import hashlib
-import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -62,40 +61,6 @@ def normalize(text: str) -> str:
 def text_sha256(text: str) -> str:
     """Hash of a text with whitespace and letter case normalized."""
     return hashlib.sha256(normalize(text).encode()).hexdigest()
-
-
-# --- Given/When/Then ---------------------------------------------------------------------------
-
-_MARK = re.compile(r"(?:^|[.;,:]\s+)(given|when|then)\b\s*", re.IGNORECASE)
-
-
-def parse_scenario(text: str) -> dict[str, list[str]] | None:
-    """Split "Given ..., when ..., then ..." into its three parts, or None when the text is not in
-    that form (it needs a `when` and a `then`, in that order). Interim: the model will be asked
-    for the fields directly (SPC-13)."""
-    marks = list(_MARK.finditer(text))
-    first: dict[str, re.Match[str]] = {}
-    for m in marks:
-        first.setdefault(m.group(1).lower(), m)
-    if "when" not in first or "then" not in first:
-        return None
-    if first["when"].start() > first["then"].start():
-        return None
-    if "given" in first and first["given"].start() > first["when"].start():
-        return None
-    parts: dict[str, str] = {}
-    for name, m in first.items():
-        following = [o.start() for o in marks if o.start() > m.start()]
-        end = min(following) if following else len(text)
-        parts[name] = text[m.end() : end].strip().rstrip(".;,").strip()
-    if not parts["when"] or not parts["then"]:
-        return None
-    given = parts.get("given", "")
-    return {
-        "given": [given] if given else [],
-        "when": [parts["when"]],
-        "then": [parts["then"]],
-    }
 
 
 # --- matching ----------------------------------------------------------------------------------
@@ -228,10 +193,14 @@ def build_sidecar(
                 text = claim_text(claim, part.style)
                 scenario = None
                 if kind == "acceptance":
-                    scenario = parse_scenario(text)
-                    if scenario is None:
-                        unreadable.append(f"Not in Given/When/Then form, so not a scenario: {text}")
+                    if claim.scenario is None:  # not asked for as fields: not a scenario (SPC-13)
+                        unreadable.append(f"Not given as a scenario, so not testable: {text}")
                         continue
+                    scenario = {
+                        "given": claim.scenario.given,
+                        "when": claim.scenario.when,
+                        "then": claim.scenario.then,
+                    }
                 drafts.append(
                     _Draft(
                         text, text_sha256(text), claim.confidence,
@@ -276,7 +245,7 @@ def build_sidecar(
             for item in leftovers:
                 retired[item["id"]] = {"id": item["id"], "retired_in": code_version}
 
-    return {
+    document = {
         "schema": SIDECAR_SCHEMA,
         "application": application,
         "feature": {"slug": slug, "title": page.title.removeprefix(_TITLE_PREFIX)},
@@ -294,6 +263,23 @@ def build_sidecar(
         ],
         "counters": dict(sorted(allocator.counters.items())),
     }
+    return document
+
+
+def hide_answered_gaps(
+    page: Page, results: Mapping[str, SectionResult], document: Mapping[str, Any]
+) -> None:
+    """The page lists only the gaps still open (SPC-14): the ones the cross-check found answered
+    elsewhere stay in the sidecar, with the IDs that answer them, and leave the page."""
+    answered = {
+        (g["part"], text_sha256(g["text"]))
+        for g in document["gaps"]
+        if g["triage"]["status"] == "answered_elsewhere"
+    }
+    for part in page.parts:
+        result = results.get(page.key(part.id))
+        if result is not None:
+            result.gaps = [g for g in result.gaps if (part.id, text_sha256(g)) not in answered]
 
 
 def build_index(

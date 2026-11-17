@@ -1,3 +1,4 @@
+import copy
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -39,11 +40,31 @@ class Evidence:
         return f"{self.file}:{self.start_line}-{self.end_line}"
 
 
+@dataclass(frozen=True)
+class Scenario:
+    """An acceptance scenario: preconditions, actions and observable results (SPC-13)."""
+
+    given: list[str]
+    when: list[str]
+    then: list[str]
+
+    def text(self) -> str:
+        """The scenario as one sentence: "Given a and b, when c, then d."."""
+        clauses = [
+            f"{word} {' and '.join(lines)}"
+            for word, lines in (("given", self.given), ("when", self.when), ("then", self.then))
+            if lines
+        ]
+        sentence = ", ".join(clauses)
+        return sentence[:1].upper() + sentence[1:] + "."
+
+
 @dataclass
 class Claim:
     text: str
     confidence: Confidence
     evidence: list[Evidence]
+    scenario: Scenario | None = None
 
 
 @dataclass
@@ -70,6 +91,27 @@ class _ClaimModel(BaseModel):
 
 class _SectionModel(BaseModel):
     claims: list[_ClaimModel]
+    gaps: list[str] = Field(default_factory=list)
+
+
+def _lines(values: list[str]) -> list[str]:
+    return [" ".join(v.split()) for v in values if v.strip()]
+
+
+class _ScenarioModel(BaseModel):
+    given: list[str] = Field(default_factory=list)
+    when: list[str] = Field(min_length=1)
+    then: list[str] = Field(min_length=1)
+
+
+class _ScenarioClaimModel(BaseModel):
+    scenario: _ScenarioModel
+    confidence: Confidence
+    evidence: list[_EvidenceModel]
+
+
+class _ScenarioSectionModel(BaseModel):
+    claims: list[_ScenarioClaimModel]
     gaps: list[str] = Field(default_factory=list)
 
 
@@ -105,6 +147,47 @@ SECTION_JSON_SCHEMA: dict[str, Any] = {
     },
     "required": ["claims", "gaps"],
 }
+
+
+def _scenario_schema() -> dict[str, Any]:
+    """The same reply, but each statement is a scenario with its three lists instead of a text."""
+    schema = copy.deepcopy(SECTION_JSON_SCHEMA)
+    item = schema["properties"]["claims"]["items"]
+    lines = {"type": "array", "items": {"type": "string"}}
+    item["properties"].pop("text")
+    item["properties"]["scenario"] = {
+        "type": "object",
+        "properties": {
+            "given": lines,
+            "when": {**lines, "minItems": 1},
+            "then": {**lines, "minItems": 1},
+        },
+        "required": ["given", "when", "then"],
+    }
+    item["required"] = ["scenario", "confidence", "evidence"]
+    return schema
+
+
+SCENARIO_JSON_SCHEMA: dict[str, Any] = _scenario_schema()
+
+
+def parse_scenario_output(raw: str) -> tuple[list[Claim], list[str]]:
+    """Like `parse_section_output` for acceptance scenarios (SPC-13): every statement carries
+    `given`, `when` and `then`, and its text is built from them, so the two cannot disagree."""
+    try:
+        model = _ScenarioSectionModel.model_validate_json(raw)
+    except ValidationError as exc:
+        raise ValueError(str(exc).splitlines()[0] if str(exc) else "invalid JSON") from exc
+    claims: list[Claim] = []
+    for c in model.claims:
+        scenario = Scenario(
+            _lines(c.scenario.given), _lines(c.scenario.when), _lines(c.scenario.then)
+        )
+        if not scenario.when or not scenario.then:
+            continue
+        evidence = [Evidence(e.file, e.start_line, e.end_line) for e in c.evidence]
+        claims.append(Claim(scenario.text(), c.confidence, evidence, scenario))
+    return claims, [" ".join(g.split()) for g in model.gaps if g.strip()]
 
 
 def parse_section_output(raw: str) -> tuple[list[Claim], list[str]]:

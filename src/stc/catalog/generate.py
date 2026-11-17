@@ -14,11 +14,13 @@ from dataclasses import dataclass
 from stc.catalog.context import AppContext, SectionContext
 from stc.catalog.model import (
     LLM_SECTIONS,
+    SCENARIO_JSON_SCHEMA,
     SECTION_JSON_SCHEMA,
     SECTION_TITLES,
     Claim,
     Evidence,
     SectionResult,
+    parse_scenario_output,
     parse_section_output,
 )
 from stc.providers import LLMClient, Message, ProviderError
@@ -124,7 +126,7 @@ def verify_claims(
             if lines is not None and 1 <= ev.start_line <= ev.end_line <= lines:
                 valid.append(Evidence(path, ev.start_line, ev.end_line))
         if valid:
-            kept.append(Claim(claim.text, claim.confidence, valid))
+            kept.append(Claim(claim.text, claim.confidence, valid, claim.scenario))
         else:
             dropped += 1
     return kept, dropped
@@ -175,12 +177,17 @@ async def complete_claims(
     files: Mapping[str, int],
     application: str,
     result: SectionResult,
+    *,
+    scenarios: bool = False,
 ) -> SectionResult:
     """Ask for structured statements, retry once on malformed output, and keep only the ones with
-    verified citations. Shared by the catalog sections and the documentation parts."""
+    verified citations. Shared by the catalog sections and the documentation parts. With
+    `scenarios` each statement is an acceptance scenario (given, when, then)."""
+    schema = SCENARIO_JSON_SCHEMA if scenarios else SECTION_JSON_SCHEMA
+    parse = parse_scenario_output if scenarios else parse_section_output
     for attempt in (1, 2):
         try:
-            response = await llm.complete(messages, response_schema=SECTION_JSON_SCHEMA)
+            response = await llm.complete(messages, response_schema=schema)
         except ProviderError as exc:
             result.failed = True
             result.gaps.append(f"Generation failed: {exc}")
@@ -188,7 +195,7 @@ async def complete_claims(
         result.input_tokens += response.usage.input_tokens
         result.output_tokens += response.usage.output_tokens
         try:
-            claims, gaps = parse_section_output(response.text)
+            claims, gaps = parse(response.text)
         except ValueError as exc:
             if attempt == 2:
                 result.failed = True

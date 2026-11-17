@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 
 from stc.api.app import create_app
 from stc.catalog.context import SectionContext
-from stc.catalog.model import Claim, Evidence, SectionResult
+from stc.catalog.model import SCENARIO_JSON_SCHEMA, Claim, Evidence, SectionResult
 from stc.config import Settings
 from stc.db.migrate import migrate
 from stc.docs import diagrams
@@ -40,6 +40,7 @@ from stc.indexer.pipeline import host_aliases, scan_root
 from stc.indexer.registry import sync_registry
 from stc.indexer.signal_store import extract_pending, rebuild_relations
 from stc.providers import LLMResponse, Message, ProviderError, ToolSpec, Usage
+from stc.spec.triage import TRIAGE_SCHEMA
 
 SAMPLE = Path(__file__).parents[1] / "examples" / "cobol-bank-root"
 
@@ -225,6 +226,18 @@ def reply(*claims: tuple[str, str, list[tuple[str, int, int]]], gaps: Sequence[s
 
 
 GOOD = reply(("It does the work.", "high", [("src/LNBATCH.cbl", 24, 24)]))
+SCENARIO_GOOD = json.dumps(
+    {
+        "claims": [
+            {
+                "scenario": {"given": ["a batch"], "when": ["it runs"], "then": ["it works"]},
+                "confidence": "high",
+                "evidence": [{"file": "src/LNBATCH.cbl", "start_line": 24, "end_line": 24}],
+            }
+        ],
+        "gaps": [],
+    }
+)
 
 
 class FakeLLM:
@@ -234,6 +247,7 @@ class FakeLLM:
     def __init__(self, default: str = GOOD) -> None:
         self.default = default
         self.calls: list[tuple[str, list[Message]]] = []
+        self.triage_calls = 0
 
     async def complete(
         self,
@@ -242,11 +256,17 @@ class FakeLLM:
         tools: Sequence[ToolSpec] | None = None,
         response_schema: dict[str, Any] | None = None,
     ) -> LLMResponse:
+        assert response_schema is not None
+        if response_schema is TRIAGE_SCHEMA:  # the gap cross-check of a specification (SPC-14)
+            self.triage_calls += 1
+            return LLMResponse(text='{"gaps": []}', usage=Usage(10, 5))
         match = re.search(r"PART: (\S+)", messages[1].content)
-        assert match is not None and response_schema is not None
+        assert match is not None
         self.calls.append((match.group(1), list(messages)))
         if self.default == "RAISE":
             raise ProviderError("fake", "boom", retryable=False)
+        if response_schema is SCENARIO_JSON_SCHEMA:
+            return LLMResponse(text=SCENARIO_GOOD, usage=Usage(10, 5))
         return LLMResponse(text=self.default, usage=Usage(10, 5))
 
     def stream(self, messages: Sequence[Message], *, tools: Sequence[ToolSpec] | None = None):  # type: ignore[no-untyped-def]

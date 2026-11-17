@@ -6,6 +6,7 @@ a page is regenerated only when its inputs changed (DOC-07, XCT-04): the facts a
 made of, the maintainers' corrections, the model, the language or the documentation schema. The
 database is only read."""
 
+import asyncio
 import hashlib
 import json
 import os
@@ -43,9 +44,11 @@ from stc.spec.sidecar import (
     INDEX_FILE,
     build_index,
     build_sidecar,
+    hide_answered_gaps,
     is_spec_page,
     sidecar_path,
 )
+from stc.spec.triage import TRIAGE_SYSTEM_PROMPT, triage_gaps
 
 META_FILE = "_meta.json"
 Planner = Callable[[psycopg.Connection, str, int], Plan]
@@ -130,6 +133,8 @@ def _page_hash(page: Page, manual: dict[str, str], provider: str, model: str, la
     if page.parts:  # the instructions the model gets are inputs too: a better prompt re-writes
         digest.update(SYSTEM_PROMPT.encode())
         digest.update(SPEC_SYSTEM_PROMPT.encode())
+        if is_spec_page(page):
+            digest.update(TRIAGE_SYSTEM_PROMPT.encode())
     for block in page.blocks:
         if isinstance(block, Static):
             digest.update(f"s|{block.markdown}\n".encode())
@@ -293,6 +298,32 @@ async def generate_and_store(
     old = {p.path: p for p in prepared.previous.pages} if prepared.previous else {}
     statuses = {path: meta.status for path, meta in old.items()}
     failed: list[str] = []
+    documents: dict[str, dict[str, Any]] = {}  # the sidecars of the specification pages to write
+    if plan.stack_sha256 is not None:
+        for page in prepared.stale:
+            if is_spec_page(page):
+                document = build_sidecar(
+                    application=plan.application, page=page, results=results,
+                    previous=_read_json(directory / sidecar_path(page.path)),
+                    manual=prepared.manual, code_version=plan.code_version,
+                    generated_at=iso_now, stack_sha256=plan.stack_sha256,
+                    inputs_sha256=prepared.hashes[page.path],
+                )  # fmt: skip
+                if document is not None:
+                    documents[page.path] = document
+    triage_in = triage_out = 0
+    if llm is not None and documents:  # SPC-14: gaps another section already answers
+        gate = asyncio.Semaphore(max(1, concurrency))
+
+        async def triage(doc: dict[str, Any]) -> tuple[int, int]:
+            async with gate:
+                return await triage_gaps(llm, doc)
+
+        spent = await asyncio.gather(*(triage(d) for d in documents.values()))
+        triage_in, triage_out = sum(a for a, _ in spent), sum(b for _, b in spent)
+        for page in prepared.stale:
+            if page.path in documents:
+                hide_answered_gaps(page, results, documents[page.path])
     for page in prepared.stale:
         bodies: dict[str, str] = {}
         page_failed = False
@@ -311,16 +342,8 @@ async def generate_and_store(
         statuses[page.path] = status
         text = render_page(page, render_meta, status, bodies, prepared.manual)
         _write_atomic(directory / page.path, text)
-        if plan.stack_sha256 is not None and is_spec_page(page):
-            side = directory / sidecar_path(page.path)
-            document = build_sidecar(
-                application=plan.application, page=page, results=results,
-                previous=_read_json(side), manual=prepared.manual,
-                code_version=plan.code_version, generated_at=iso_now,
-                stack_sha256=plan.stack_sha256, inputs_sha256=prepared.hashes[page.path],
-            )  # fmt: skip
-            if document is not None:
-                _write_atomic(side, _dump(document))
+        if page.path in documents:
+            _write_atomic(directory / sidecar_path(page.path), _dump(documents[page.path]))
 
     for path in prepared.removed:
         (directory / path).unlink(missing_ok=True)
@@ -363,8 +386,8 @@ async def generate_and_store(
     return Outcome(
         directory, status, len(prepared.stale), len(plan.pages),
         claims=sum(len(r.claims) for r in results.values()),
-        input_tokens=sum(r.input_tokens for r in results.values()),
-        output_tokens=sum(r.output_tokens for r in results.values()),
+        input_tokens=sum(r.input_tokens for r in results.values()) + triage_in,
+        output_tokens=sum(r.output_tokens for r in results.values()) + triage_out,
         failed_parts=sorted(failed),
     )  # fmt: skip
 
