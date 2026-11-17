@@ -8,7 +8,7 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from stc.catalog.model import SectionResult
+from stc.catalog.model import Claim, SectionResult
 from stc.docs.model import Page, Part, Static
 
 _MANUAL = re.compile(
@@ -43,13 +43,18 @@ def manual_block(key: str, text: str) -> str:
 _LEADING_NUMBER = re.compile(r"^\(?\d+[.)]\s+")
 
 
+def claim_text(claim: Claim, style: str) -> str:
+    """The statement as the page shows it. The model sometimes numbers its own steps; the
+    numbering in the page is the one that counts."""
+    return _LEADING_NUMBER.sub("", claim.text) if style == "steps" else claim.text
+
+
 def render_claims(result: SectionResult, style: str) -> str:
     lines: list[str] = []
     for number, claim in enumerate(result.claims, 1):
         evidence = ", ".join(f"`{e}`" for e in claim.evidence)
         confidence = "" if claim.confidence == "high" else f" _({claim.confidence} confidence)_"
-        # The model sometimes numbers its own steps; the numbering here is the one that counts.
-        said = _LEADING_NUMBER.sub("", claim.text) if style == "steps" else claim.text
+        said = claim_text(claim, style)
         text = f"{said}{confidence} (evidence: {evidence})"
         lines.append(f"{number}. {text}" if style == "steps" else text)
         if style != "steps":

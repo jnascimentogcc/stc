@@ -57,3 +57,4 @@ class Plan:
     files: dict[str, int]  # citable files -> number of lines
     pages: list[Page]
     skipped_features: list[str] = field(default_factory=list)
+    stack_sha256: str | None = None  # set by the specification planner: its pages get a sidecar

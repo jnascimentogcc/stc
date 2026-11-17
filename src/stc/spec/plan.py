@@ -6,6 +6,7 @@ The order and the dependencies are computed from the facts, never by the model. 
 a model: it builds pages of static markdown and parts the model will write from assembled evidence.
 """
 
+import hashlib
 import re
 from collections import defaultdict
 
@@ -534,7 +535,10 @@ def build_spec_plan(
                 f.slug in cyclic,
             )  # fmt: skip
         )
-    return Plan(base.name, base.code_version, base.files, pages, [f.title for f in skipped])
+    return Plan(
+        base.name, base.code_version, base.files, pages, [f.title for f in skipped],
+        stack_sha256=hashlib.sha256(stack.encode()).hexdigest(),
+    )  # fmt: skip
 
 
 def spec_planner(stack: str) -> Planner:

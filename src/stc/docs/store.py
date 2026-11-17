@@ -13,6 +13,7 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import psycopg
 
@@ -38,6 +39,13 @@ from stc.docs.render import (
 from stc.indexer.chunk_store import CHUNK_VERSION
 from stc.indexer.signal_store import SIGNALS_VERSION
 from stc.providers import LLMClient
+from stc.spec.sidecar import (
+    INDEX_FILE,
+    build_index,
+    build_sidecar,
+    is_spec_page,
+    sidecar_path,
+)
 
 META_FILE = "_meta.json"
 Planner = Callable[[psycopg.Connection, str, int], Plan]
@@ -97,6 +105,20 @@ def collect_manual(directory: Path) -> dict[str, str]:
         for file in sorted(directory.rglob("*.md")):
             found.update(parse_manual_blocks(file.read_text(encoding="utf-8")))
     return found
+
+
+def _read_json(path: Path) -> dict[str, Any] | None:
+    if not path.is_file():
+        return None
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except ValueError:
+        return None
+    return raw if isinstance(raw, dict) else None
+
+
+def _dump(document: dict[str, Any]) -> str:
+    return json.dumps(document, indent=2, ensure_ascii=False) + "\n"
 
 
 def _page_hash(page: Page, manual: dict[str, str], provider: str, model: str, language: str) -> str:
@@ -195,6 +217,11 @@ def prepare(
     for page in plan.pages:
         before = old.get(page.path)
         missing = before is None or not (directory / page.path).is_file()
+        no_sidecar = (
+            plan.stack_sha256 is not None
+            and is_spec_page(page)
+            and not (directory / sidecar_path(page.path)).is_file()
+        )
         if static_only:
             keeps_text = before is not None and before.status != "static" and bool(page.parts)
             changed = missing or (
@@ -204,6 +231,7 @@ def prepare(
             changed = (
                 force
                 or missing
+                or no_sidecar
                 or before is None
                 or before.inputs_sha256 != hashes[page.path]
                 or before.status != "complete"
@@ -221,6 +249,18 @@ def prepare(
         plan, directory, manual, hashes, stale, removed, orphans, previous, static_only,
         provider, model, tokens_in, tokens_out,
     )  # fmt: skip
+
+
+def _write_index(directory: Path, plan: Plan, generated_at: str) -> None:
+    """`_specs.json`, rewritten only when the features it lists or the code version changed."""
+    existing = [
+        sidecar_path(p.path) for p in plan.pages if (directory / sidecar_path(p.path)).is_file()
+    ]
+    document = build_index(plan.application, plan.code_version, generated_at, plan.pages, existing)
+    before = _read_json(directory / INDEX_FILE)
+    if before is not None and {**before, "generated_at": ""} == {**document, "generated_at": ""}:
+        return
+    _write_atomic(directory / INDEX_FILE, _dump(document))
 
 
 def _overall(statuses: list[str]) -> str:
@@ -246,7 +286,9 @@ async def generate_and_store(
             llm, prepared.stale, plan.files, plan.application,
             language=language, manual=prepared.manual, concurrency=concurrency,
         )  # fmt: skip
-    now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
+    moment = datetime.now(UTC)
+    now = moment.strftime("%Y-%m-%d %H:%M UTC")
+    iso_now = moment.strftime("%Y-%m-%dT%H:%M:%SZ")
     render_meta = RenderMeta(plan.code_version, now, prepared.provider, prepared.model, language)
     old = {p.path: p for p in prepared.previous.pages} if prepared.previous else {}
     statuses = {path: meta.status for path, meta in old.items()}
@@ -269,13 +311,26 @@ async def generate_and_store(
         statuses[page.path] = status
         text = render_page(page, render_meta, status, bodies, prepared.manual)
         _write_atomic(directory / page.path, text)
+        if plan.stack_sha256 is not None and is_spec_page(page):
+            side = directory / sidecar_path(page.path)
+            document = build_sidecar(
+                application=plan.application, page=page, results=results,
+                previous=_read_json(side), manual=prepared.manual,
+                code_version=plan.code_version, generated_at=iso_now,
+                stack_sha256=plan.stack_sha256, inputs_sha256=prepared.hashes[page.path],
+            )  # fmt: skip
+            if document is not None:
+                _write_atomic(side, _dump(document))
 
     for path in prepared.removed:
         (directory / path).unlink(missing_ok=True)
+        (directory / sidecar_path(path)).unlink(missing_ok=True)
         statuses.pop(path, None)
         parent = (directory / path).parent
         if parent != directory and parent.is_dir() and not any(parent.iterdir()):
             parent.rmdir()
+    if plan.stack_sha256 is not None:
+        _write_index(directory, plan, iso_now)
     orphans_changed = not prepared._orphans_unchanged()
     extra: list[PageMeta] = []
     orphan_file = directory / ORPHANS_PAGE
