@@ -16,7 +16,7 @@ The root `CLAUDE.md` still applies (everything in English, no private data, no s
 
 - `tool/` — Python (uv, Typer, pytest, ruff, mypy strict): reader, drift state, later agents and mapping.
 - `spike/` — Java experiment that validated the stack (Cucumber, REST Assured, JUnit 5). Not the template.
-- `template/` — (not yet) the Java repository the client runs in its own CI.
+- `template/` — Java repository the client runs in its own CI: sample scenarios and steps, the scenario linter, `specs/` for the sidecars, and its own copy of `contract/` (kept identical to `contracts/` by a test in `tool/`). `mvn test` needs no target; `mvn -Pacceptance test` needs `TARGET_URL`.
 
 ## Commands (from `stc-tests/tool/`)
 

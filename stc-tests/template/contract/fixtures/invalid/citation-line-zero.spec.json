@@ -1,0 +1,168 @@
+{
+  "schema": "stc.spec-sidecar/1",
+  "application": "cobol-bank",
+  "feature": {
+    "slug": "program-search-example",
+    "title": "Keyed table search"
+  },
+  "code_version": "a1b2c3d",
+  "generated_at": "2026-11-17T10:00:00Z",
+  "stack_sha256": "9647f77c4c6f48728a41f96ff9fc88b1f912358f0fb7805927054c5deed488df",
+  "page": {
+    "path": "features/program-search-example.md",
+    "inputs_sha256": "32381523e63197c929b67f793a8098bed0ae3a6fa902634fdbcc6fa4567f3346"
+  },
+  "items": [
+    {
+      "id": "program-search-example/FR-01",
+      "kind": "requirement",
+      "part": "spec-requirements",
+      "text": "The system must load a keyed table of three records before any search.",
+      "text_sha256": "14f3188d8fcedf6edadcd40d319d95416c53e43541904b236c3a87d08a5611c3",
+      "confidence": "high",
+      "citations": [
+        {
+          "file": "SEARCH-EXAMPLE.cbl",
+          "start": 0,
+          "end": 30
+        }
+      ],
+      "status": "unchanged",
+      "origin": "generated"
+    },
+    {
+      "id": "program-search-example/FR-04",
+      "kind": "requirement",
+      "part": "spec-requirements",
+      "text": "The system must search the table by id-1 and show the record on a hit.",
+      "text_sha256": "c01464e838a8d884901b4e884aa61c95867d2112f76e48ff03c3f21e5e4ca2b3",
+      "confidence": "high",
+      "citations": [
+        {
+          "file": "SEARCH-EXAMPLE.cbl",
+          "start": 41,
+          "end": 58
+        }
+      ],
+      "status": "changed",
+      "origin": "generated"
+    },
+    {
+      "id": "program-search-example/FR-07",
+      "kind": "requirement",
+      "part": "spec-requirements",
+      "text": "The system must find a record only when all three ids match.",
+      "text_sha256": "e42c33530ad42fffd0bb8925366d5990a08aa3ef5c67c51cc298b602824f4ccc",
+      "confidence": "medium",
+      "citations": [
+        {
+          "file": "SEARCH-EXAMPLE.cbl",
+          "start": 60,
+          "end": 72
+        }
+      ],
+      "status": "new",
+      "origin": "generated"
+    },
+    {
+      "id": "program-search-example/BR-02",
+      "kind": "rule",
+      "part": "spec-rules",
+      "text": "A search that finds no record shows the message \"Item not found.\"",
+      "text_sha256": "a1caab593f86834776ef164952cd82909609acf5c12e3edc4b4dd26ac4ab49f9",
+      "confidence": "high",
+      "citations": [
+        {
+          "file": "SEARCH-EXAMPLE.cbl",
+          "start": 73,
+          "end": 80
+        }
+      ],
+      "status": "unchanged",
+      "origin": "generated"
+    },
+    {
+      "id": "program-search-example/AC-03",
+      "kind": "acceptance",
+      "part": "spec-acceptance",
+      "text": "Three ids where one differs find no record.",
+      "text_sha256": "fe6e2a89c891fd289abe145cec4902f1c8c695b479af6f0b8a7d64de26e05a35",
+      "confidence": "medium",
+      "citations": [
+        {
+          "file": "SEARCH-EXAMPLE.cbl",
+          "start": 60,
+          "end": 72
+        }
+      ],
+      "status": "new",
+      "origin": "generated",
+      "scenario": {
+        "given": [
+          "the table has the test data"
+        ],
+        "when": [
+          "the ids 0001, 0101 and 0499 are searched"
+        ],
+        "then": [
+          "the result is \"Item not found.\""
+        ]
+      }
+    },
+    {
+      "id": "program-search-example/AC-05",
+      "kind": "acceptance",
+      "part": "spec-acceptance",
+      "text": "A maintainer rule: an empty id is rejected.",
+      "text_sha256": "01f60acbea6d337732737f7bdc4ef869fe4919ea391ace5de809866e716b62fd",
+      "confidence": "high",
+      "citations": [],
+      "status": "unchanged",
+      "origin": "manual",
+      "scenario": {
+        "given": [],
+        "when": [
+          "an empty id is searched"
+        ],
+        "then": [
+          "the search is rejected"
+        ]
+      }
+    }
+  ],
+  "retired": [
+    {
+      "id": "program-search-example/FR-06",
+      "retired_in": "a1b2c3d"
+    }
+  ],
+  "gaps": [
+    {
+      "id": "program-search-example/GAP-01",
+      "part": "spec-risks",
+      "text": "What records does SETUP-TEST-DATA provide?",
+      "triage": {
+        "status": "answered_elsewhere",
+        "by": [
+          "program-search-example/FR-01"
+        ],
+        "model": "example-model"
+      }
+    },
+    {
+      "id": "program-search-example/GAP-02",
+      "part": "spec-risks",
+      "text": "How are duplicate keys selected?",
+      "triage": {
+        "status": "open",
+        "by": []
+      }
+    }
+  ],
+  "manual_blocks": [
+    {
+      "key": "features/program-search-example:spec-requirements",
+      "text_sha256": "4acf9c9a05a09922cf66571223315b63fa0a8625b0420becfcce6bd23aacd1dd"
+    }
+  ]
+}

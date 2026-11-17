@@ -62,6 +62,22 @@ jobs:
           cache-dependency-path: stc-tests/spike/pom.xml
       - run: mvn --batch-mode test
 
+  tests-template:
+    # The Java template the client runs: contract tests and the scenario linter (no target needed).
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: stc-tests/template
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+          cache-dependency-path: stc-tests/template/pom.xml
+      - run: mvn --batch-mode test
+
   frontend:
     runs-on: ubuntu-latest
     defaults:

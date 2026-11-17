@@ -1,0 +1,130 @@
+{
+  "schema": "stc.spec-sidecar/1",
+  "application": "sample",
+  "feature": {
+    "slug": "program-search-example",
+    "title": "Keyed table search"
+  },
+  "code_version": "sample",
+  "generated_at": "2026-11-17T10:00:00Z",
+  "stack_sha256": "38a0963a6364b09ad867aa9a66c6d009673c21e182015461da236ec361877f77",
+  "page": {
+    "path": "features/program-search-example.md",
+    "inputs_sha256": "32381523e63197c929b67f793a8098bed0ae3a6fa902634fdbcc6fa4567f3346"
+  },
+  "items": [
+    {
+      "id": "program-search-example/FR-01",
+      "kind": "requirement",
+      "part": "spec-requirements",
+      "text": "The system must load a keyed table of three records before any search.",
+      "text_sha256": "14f3188d8fcedf6edadcd40d319d95416c53e43541904b236c3a87d08a5611c3",
+      "confidence": "high",
+      "citations": [
+        {
+          "file": "SEARCH-EXAMPLE.cbl",
+          "start": 12,
+          "end": 30
+        }
+      ],
+      "status": "new",
+      "origin": "generated"
+    },
+    {
+      "id": "program-search-example/FR-02",
+      "kind": "requirement",
+      "part": "spec-requirements",
+      "text": "The system must search the unordered table one entry at a time and report the value found.",
+      "text_sha256": "38c76b01e9bf6425f7d02d0132db5240493a6cf42cf11e9707a72da042d13059",
+      "confidence": "high",
+      "citations": [
+        {
+          "file": "SEARCH-EXAMPLE.cbl",
+          "start": 31,
+          "end": 40
+        }
+      ],
+      "status": "new",
+      "origin": "generated"
+    },
+    {
+      "id": "program-search-example/FR-04",
+      "kind": "requirement",
+      "part": "spec-requirements",
+      "text": "The system must search the keyed table by the first id.",
+      "text_sha256": "978c968584a33c42b5e9a7807cf54e927c9d982a95bb550d101756cac96ca878",
+      "confidence": "high",
+      "citations": [
+        {
+          "file": "SEARCH-EXAMPLE.cbl",
+          "start": 41,
+          "end": 58
+        }
+      ],
+      "status": "new",
+      "origin": "generated"
+    },
+    {
+      "id": "program-search-example/FR-05",
+      "kind": "requirement",
+      "part": "spec-requirements",
+      "text": "The system must show the matching record, or the message Item not found.",
+      "text_sha256": "26a2ec309326168adef4838eb4ed05d6d7b6e1c2d085b26cf7fdb843da4d8727",
+      "confidence": "high",
+      "citations": [
+        {
+          "file": "SEARCH-EXAMPLE.cbl",
+          "start": 59,
+          "end": 66
+        }
+      ],
+      "status": "new",
+      "origin": "generated"
+    },
+    {
+      "id": "program-search-example/FR-07",
+      "kind": "requirement",
+      "part": "spec-requirements",
+      "text": "The system must find a record in the keyed table only when all three ids match.",
+      "text_sha256": "4fac05800e758bca278b244eba22e7d08b39cd64ca62d04cca069fa7e5f67901",
+      "confidence": "high",
+      "citations": [
+        {
+          "file": "SEARCH-EXAMPLE.cbl",
+          "start": 67,
+          "end": 80
+        }
+      ],
+      "status": "new",
+      "origin": "generated"
+    },
+    {
+      "id": "program-search-example/FR-09",
+      "kind": "requirement",
+      "part": "spec-requirements",
+      "text": "The system must show the message Item not found. when the sequential search finds nothing.",
+      "text_sha256": "3f65344425046984d2a9714adf0952d91a5a79a3a42c966924086c8cc2010a34",
+      "confidence": "high",
+      "citations": [
+        {
+          "file": "SEARCH-EXAMPLE.cbl",
+          "start": 81,
+          "end": 90
+        }
+      ],
+      "status": "new",
+      "origin": "generated"
+    }
+  ],
+  "retired": [
+    {
+      "id": "program-search-example/FR-06",
+      "retired_in": "sample"
+    }
+  ],
+  "gaps": [],
+  "manual_blocks": [],
+  "counters": {
+    "FR": 9
+  }
+}
