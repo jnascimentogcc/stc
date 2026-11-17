@@ -94,8 +94,10 @@ PART_TASKS = {
     "spec-acceptance": "Write acceptance scenarios, each derived from a requirement or rule, using "
     "the exact values in the code. Give every scenario as three lists: 'given' (the preconditions "
     "and the data), 'when' (the actions or inputs) and 'then' (the observable results), each entry "
-    "one short statement with the exact values. When a value is not in the code, mark the "
-    "scenario low confidence and say in gaps which data is needed. One scenario per statement.",
+    "one short statement with the exact values. Write 'then' as what can be observed (what is "
+    "shown, returned, written or stored), never as 'The system must ...'. When a value is not in "
+    "the code, mark the scenario low confidence and say in gaps which data is needed. One "
+    "scenario per statement.",
     "spec-tasks": "Write an ordered implementation plan for this feature in the target stack: "
     "small tasks, each deliverable and testable on its own, the last one verifying the acceptance "
     "scenarios. Each task cites the legacy code it covers. Do not number them yourself.",

@@ -83,9 +83,25 @@ def _cites(item: Mapping[str, Any]) -> frozenset[tuple[str, int, int]]:
     return frozenset((c["file"], c["start"], c["end"]) for c in item.get("citations", []))
 
 
+# A rewritten statement keeps its ID when it cites mostly the same code and still says something
+# similar: the model rarely repeats a line range to the line, so identical citations are too strict.
+MIN_OVERLAP = 0.5  # share of the cited lines the two statements have in common
+MIN_SIMILARITY = 0.3  # similarity of the two texts, 0 to 1
+
+
+def _covered(cites: frozenset[tuple[str, int, int]]) -> set[tuple[str, int]]:
+    return {(file, n) for file, start, end in cites for n in range(start, end + 1)}
+
+
+def _overlap(a: set[tuple[str, int]], b: set[tuple[str, int]]) -> float:
+    union = len(a | b)
+    return len(a & b) / union if union else 0.0
+
+
 def _match(old: Sequence[Mapping[str, Any]], new: Sequence[_Draft]) -> dict[int, tuple[int, str]]:
-    """New statement index -> (old statement index, "unchanged" | "changed"): the same text first,
-    then the same citations (the best text among the ones that cite the same code)."""
+    """New statement index -> (old statement index, "unchanged" | "changed"). Three passes: the
+    same text; the same citations (the most similar text among them); mostly the same cited code
+    and a similar text. Each old statement is used once."""
     matched: dict[int, tuple[int, str]] = {}
     used: set[int] = set()
     for j, draft in enumerate(new):
@@ -94,17 +110,39 @@ def _match(old: Sequence[Mapping[str, Any]], new: Sequence[_Draft]) -> dict[int,
                 used.add(i)
                 matched[j] = (i, "unchanged")
                 break
-    for j, draft in enumerate(new):
+    similarity: dict[tuple[int, int], float] = {}
+
+    def text_score(j: int, i: int) -> float:
+        if (j, i) not in similarity:
+            similarity[(j, i)] = difflib.SequenceMatcher(
+                None, normalize(old[i]["text"]), normalize(new[j].text)
+            ).ratio()
+        return similarity[(j, i)]
+
+    for j, draft in enumerate(new):  # the same citations
         if j in matched or not draft.cites:
             continue
         best: tuple[float, int] | None = None
         for i, item in enumerate(old):
             if i in used or _cites(item) != draft.cites:
                 continue
-            score = difflib.SequenceMatcher(
-                None, normalize(item["text"]), normalize(draft.text)
-            ).ratio()
+            score = text_score(j, i)
             if best is None or score > best[0]:
+                best = (score, i)
+        if best is not None:
+            used.add(best[1])
+            matched[j] = (best[1], "changed")
+    lines_old = {i: _covered(_cites(item)) for i, item in enumerate(old) if i not in used}
+    for j, draft in enumerate(new):  # mostly the same code, a similar text
+        if j in matched or not draft.cites:
+            continue
+        lines = _covered(draft.cites)
+        best = None
+        for i, covered in lines_old.items():
+            if i in used or _overlap(lines, covered) < MIN_OVERLAP:
+                continue
+            score = text_score(j, i)
+            if score >= MIN_SIMILARITY and (best is None or score > best[0]):
                 best = (score, i)
         if best is not None:
             used.add(best[1])

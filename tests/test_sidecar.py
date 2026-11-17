@@ -536,3 +536,55 @@ def test_acceptance_scenarios_come_from_the_fields(tmp_path: Path) -> None:
     }
     text = (tmp_path / "app" / "features" / "job-x.md").read_text("utf-8")
     assert "Given data, when run, then done." in text
+
+
+def test_a_rewritten_statement_citing_mostly_the_same_code_keeps_its_id() -> None:
+    page = _page("spec-requirements")
+    first = _build(
+        page,
+        {"spec-requirements": _result(
+            "spec-requirements", _claim("The system must update the contract to status D.", 10, 30)
+        )},
+    )  # fmt: skip
+    again = _claim("The system must set the status of the contract to D when it is late.", 12, 32)
+    second = _build(page, {"spec-requirements": _result("spec-requirements", again)}, first)
+    assert _ids(second, "requirement") == ["job-x/FR-01"] and second["retired"] == []
+    assert second["items"][0]["status"] == "changed"
+
+
+def test_the_same_citations_keep_the_id_whatever_the_new_text() -> None:
+    page = _page("spec-requirements")
+    first = _build(
+        page,
+        {"spec-requirements": _result(
+            "spec-requirements", _claim("The system must update the contract to status D.", 10, 30)
+        )},
+    )  # fmt: skip
+    other = _claim("Print the page header in uppercase.", 10, 30)
+    second = _build(page, {"spec-requirements": _result("spec-requirements", other)}, first)
+    assert _ids(second, "requirement") == ["job-x/FR-01"]  # SPC-12: same evidence, same statement
+    assert second["items"][0]["status"] == "changed"
+
+
+def test_a_different_text_over_other_code_is_a_new_statement() -> None:
+    page = _page("spec-requirements")
+    first = _build(
+        page,
+        {"spec-requirements": _result(
+            "spec-requirements", _claim("The system must update the contract to status D.", 10, 30)
+        )},
+    )  # fmt: skip
+    far = _claim("The system must update the contract to status E.", 100, 120)
+    second = _build(page, {"spec-requirements": _result("spec-requirements", far)}, first)
+    assert _ids(second, "requirement") == ["job-x/FR-02"]
+    assert [r["id"] for r in second["retired"]] == ["job-x/FR-01"]
+
+
+def test_the_same_text_over_other_lines_is_still_the_same_statement() -> None:
+    page = _page("spec-requirements")
+    text = "The system must update the contract to status D."
+    first = _build(page, {"spec-requirements": _result("spec-requirements", _claim(text, 10, 30))})
+    moved = _claim(text, 100, 120)  # the code moved
+    second = _build(page, {"spec-requirements": _result("spec-requirements", moved)}, first)
+    assert _ids(second, "requirement") == ["job-x/FR-01"]
+    assert second["items"][0]["status"] == "unchanged"
