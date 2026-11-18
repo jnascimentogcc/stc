@@ -112,6 +112,13 @@ def _cross_checks(document: dict[str, Any]) -> None:
     unknown = sorted(set(document["target"]["fields"]) - set(names))
     if unknown:
         raise ContractError(f"target fields without a legacy input: {', '.join(unknown)}")
+    request = document["legacy"].get("request")
+    if request:
+        unknown = sorted(set(request["fields"]) - set(names))
+        if unknown:
+            raise ContractError(
+                f"legacy request fields without a legacy input: {', '.join(unknown)}"
+            )
     ids = [d["id"] for d in document["accepted_differences"]]
     if len(ids) != len(set(ids)):
         raise ContractError("accepted differences have a repeated id")

@@ -63,6 +63,18 @@ def test_a_target_field_without_a_legacy_input_is_refused(tmp_path: Path) -> Non
         mapping.load_mapping(bad)
 
 
+def test_a_legacy_request_field_without_a_legacy_input_is_refused(tmp_path: Path) -> None:
+    text = (FIXTURES / "valid" / "php-loan.mapping.yaml").read_text(encoding="utf-8")
+    assert mapping.load_mapping(FIXTURES / "valid" / "php-loan.mapping.yaml")
+    bad = tmp_path / "bad.mapping.yaml"
+    bad.write_text(
+        text.replace("fields: {amount: amount, months", "fields: {ghost: amount, months", 1),
+        encoding="utf-8",
+    )
+    with pytest.raises(ContractError, match="ghost"):
+        mapping.load_mapping(bad)
+
+
 def test_the_draft_is_built_by_the_code(specs: Path) -> None:
     feature = read_application(specs, "cobol-bank").features[0]
     document, usage = mapping.draft_mapping("cobol-bank", feature, FakeLLM(REPLY))
