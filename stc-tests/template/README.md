@@ -31,7 +31,8 @@ mvn test -Dcatalog.update=true            # regenerate catalog/actions.json afte
 ```
 
 The default build checks the contract fixtures, fails if `catalog/actions.json` is out of date with the steps, and lints every scenario against `specs/` and the catalog. The
-`acceptance` profile runs the Cucumber suite and needs `TARGET_URL`; the report is
+`acceptance` profile runs the Cucumber suite and needs `TARGET_URL`; it runs only scenarios tagged
+`@status:approved` (the tag `stc-tests approve` adds), so a draft never runs against the target; the report is
 `target/cucumber.html`.
 
 ## GitHub Actions
