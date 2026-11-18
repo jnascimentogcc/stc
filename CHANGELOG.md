@@ -11,6 +11,14 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - **Specification sidecar** (SPC-10..SPC-15): `stc spec` also writes `features/<feature>.spec.json` per feature and `_specs.json` per application, in the contract `stc.spec-sidecar/1` (`contracts/`, JSON Schema and fixtures). Every statement has a stable ID that is never reused, a text hash, verified citations and a status against the previous generation; acceptance scenarios are asked for as `given`, `when` and `then`; gaps get IDs, and a model call per specification marks the ones another section already answers, which then leave the page and stay in the sidecar. Specifications that already exist are rewritten once on the next run with a model, because the prompts changed.
 - **Documentation viewer** in the frontend (`/docs`): navigation by page, outline, Mermaid diagrams, clickable citations that open the cited code, download as one markdown file. Read-only API under `/api/docs`.
 
+- **`stc-tests`** (`stc-tests/`, a separate program in the repository; design in `docs/proposal-test-solution.md`): reads the specification sidecars and drafts Gherkin scenarios bound to an action catalog, with drift detection, human approval of each scenario (`review`, `approve`, `reject`), an interface mapping per program (`mapping`, `approve-mapping`) and a Java template (Cucumber, REST Assured) that runs the approved scenarios against the migrated system or, with `SUBJECT=legacy`, against an executable legacy as an oracle (`legacy/php/compose.yml`).
+- **Interface mapping contract** `stc.interface-mapping/1.1` (`contracts/`, JSON Schema and fixtures); 1.1 adds `legacy.request`, required when the legacy is executable.
+- **PHP example** `examples/php-root/loan-api` and the target stack `examples/stack-spring-sync-api.txt`.
+
+### Fixed
+
+- PHP: a route registered with an inline callback now reaches the classes it names (`Simulator::run`), so they enter the feature's files and the specification. Other languages are unchanged.
+
 ## [0.3.0] - 2026-11-12
 
 COBOL, copybooks and JCL.

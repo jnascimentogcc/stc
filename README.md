@@ -22,6 +22,7 @@ Not implemented yet: chat authentication (do not expose the chat beyond a truste
    - the `stc query` and `stc ask` commands.
 4. **Document.** `stc docs` writes the full documentation of an application: linked markdown pages (overview, architecture, one page per feature, data model, interfaces, dependencies, configuration and operations) with Mermaid diagrams, viewable in the web UI under `/docs`. Tables and diagrams come from the index; the narrative is written by the LLM from assembled evidence and every statement is verified against the indexed code. See [Documentation and migration specifications](#documentation-and-migration-specifications).
 5. **Specify.** `stc spec` writes, per feature, a migration specification (requirements, business rules, data, proposed design and implementation plan for a configurable target stack, acceptance scenarios, risks), meant for a coding assistant such as Claude Code to implement in a new project. STC does not generate the new code.
+   Next to STC, [`stc-tests/`](stc-tests/CLAUDE.md) is a separate program that turns those specifications into acceptance tests: it drafts Gherkin scenarios traced to the requirement IDs, a person approves or rejects each one, and a Java template runs the approved scenarios against the migrated system (and, when the legacy is executable, against it first as an oracle). It shares only the contracts in `contracts/` with STC, never code.
 6. **Evaluate.** `stc evaluate` runs a file of reference questions and reports search recall and answer quality, so changes to the indexer or the prompts can be measured.
 
 Design principles:
@@ -133,6 +134,8 @@ Every application remembers its source, and relations between applications of di
 
 The complete walk-through, including the chat UI, the MCP server and the evaluation, is in [docs/getting-started.md](docs/getting-started.md). `uv run stc --help` lists every command.
 
+`examples/php-root/` has a small fictional PHP HTTP API (a loan simulation) that is also executable, so `stc-tests` can run its scenarios against it. STC finds PHP endpoints from Laravel, Slim/Lumen and Symfony routes, and follows `Class::method(` and `new Class` from an inline route callback to the classes it names. `examples/stack-spring-sync-api.txt` is a target stack for it (Java 21, Spring Boot 3, synchronous REST).
+
 The demo applications in `examples/demo-root/` are fake and safe to send to a model provider. Before indexing your own code, read [docs/real-projects.md](docs/real-projects.md).
 
 ## Documentation and migration specifications
@@ -143,7 +146,7 @@ Both read the index and write plain markdown files, so they can be reviewed, edi
 
 **Migration specifications** (`stc spec <application>` or `--all`) writes `STC_SPECS/<application>/` (default `./specs`): an `index.md` with the target stack and the features in a migration order computed from their data dependencies, one `features/<feature>.md` per feature, and a `CLAUDE.md` to copy to the root of the new project. The target stack is free text, from a file given with `--stack` or `STC_SPEC_STACK`; the default is Java, Spring Boot, JPA, PostgreSQL and asynchronous REST.
 
-Next to each feature page `stc spec` writes a **sidecar**, `features/<feature>.spec.json`, and one `_specs.json` per application that lists the features in migration order. The sidecar holds the same statements as the page in a form other programs can read: a stable ID per statement (`<feature>/FR-04`), a hash of its text, its confidence and verified citations, the acceptance scenarios as `given`, `when` and `then`, the gaps (with the IDs of the statements that already answer them, when another section does), and what changed since the previous generation. An ID is never reused, even after its statement is gone. The format is the contract in [`contracts/`](contracts/) (JSON Schema and fixtures); a reader must refuse a major version it does not know. STC never reads or calls the programs that use it.
+Next to each feature page `stc spec` writes a **sidecar**, `features/<feature>.spec.json`, and one `_specs.json` per application that lists the features in migration order. The sidecar holds the same statements as the page in a form other programs can read: a stable ID per statement (`<feature>/FR-04`), a hash of its text, its confidence and verified citations, the acceptance scenarios as `given`, `when` and `then`, the gaps (with the IDs of the statements that already answer them, when another section does), and what changed since the previous generation. An ID is never reused, even after its statement is gone. The format is the contract in [`contracts/`](contracts/) (JSON Schema and fixtures); a reader must refuse a major version it does not know. STC never reads or calls the programs that use it. A second contract, `stc.interface-mapping/1`, describes what corresponds to what between the legacy interface and the migrated one for each program (a YAML file in the tests repository, drafted by the AI and approved by the migration team); it belongs to `stc-tests`, not to `stc spec`.
 
 To implement a specification in a new project with Claude Code:
 
@@ -491,6 +494,8 @@ If the client cannot find `uv`, put its full path in `command`.
 | [docs/ui-spec.md](docs/ui-spec.md) | Global UI design system and patterns |
 | [docs/getting-started.md](docs/getting-started.md) | Run the pipeline on the demo applications, step by step |
 | [docs/real-projects.md](docs/real-projects.md) | Checklist for the first run on real code |
+| [docs/proposal-test-solution.md](docs/proposal-test-solution.md) | Design of `stc-tests`, the acceptance tests drafted from the specifications |
+| [stc-tests/CLAUDE.md](stc-tests/CLAUDE.md) | How to work on `stc-tests` (commands, separation from STC); the Java template has its own [README](stc-tests/template/README.md) |
 
 ## Contributing
 
