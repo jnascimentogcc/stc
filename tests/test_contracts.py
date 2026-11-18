@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import yaml
 from jsonschema import Draft202012Validator
 
 CONTRACTS = Path(__file__).resolve().parent.parent / "contracts"
@@ -68,3 +69,59 @@ def test_invalid_fixture_fails_where_expected(name: str) -> None:
     errors = _errors(FIXTURES / "invalid" / name)
     assert errors, f"{name} should not validate"
     assert EXPECTED[name] in errors
+
+
+# --- the interface mapping (YAML files, validated against the same kind of schema) ---------------
+
+MAPPING: dict[str, Any] = _load(CONTRACTS / "interface-mapping.schema.json")
+MAPPING_FIXTURES = FIXTURES / "mapping"
+
+
+class _Loader(yaml.SafeLoader):
+    """YAML where a timestamp stays text, as the contract says (`approved_at` is a string)."""
+
+
+_Loader.yaml_implicit_resolvers = {
+    key: [(tag, regex) for tag, regex in resolvers if tag != "tag:yaml.org,2002:timestamp"]
+    for key, resolvers in yaml.SafeLoader.yaml_implicit_resolvers.items()
+}
+
+
+def _mapping_errors(path: Path) -> list[tuple[str, str]]:
+    document = yaml.load(path.read_text(encoding="utf-8"), Loader=_Loader)  # noqa: S506
+    found = Draft202012Validator(MAPPING).iter_errors(document)
+    return [("/".join(str(p) for p in e.absolute_path), e.validator) for e in found]
+
+
+def test_mapping_schema_is_valid() -> None:
+    Draft202012Validator.check_schema(MAPPING)
+
+
+@pytest.mark.parametrize(
+    "path", sorted((MAPPING_FIXTURES / "valid").glob("*.yaml")), ids=lambda p: p.name
+)
+def test_valid_mapping_passes(path: Path) -> None:
+    assert _mapping_errors(path) == []
+
+
+MAPPING_EXPECTED = {
+    "approved-with-open-questions.mapping.yaml": ("open_questions", "maxItems"),
+    "approved-without-approver.mapping.yaml": ("", "required"),
+    "bad-difference-id.mapping.yaml": ("accepted_differences/0/id", "pattern"),
+    "bad-method.mapping.yaml": ("target/request/method", "enum"),
+    "executable-not-boolean.mapping.yaml": ("legacy/executable", "type"),
+    "relative-path.mapping.yaml": ("target/request/path", "pattern"),
+    "unknown-major.mapping.yaml": ("schema", "pattern"),
+}
+
+
+def test_every_invalid_mapping_is_covered() -> None:
+    names = {p.name for p in (MAPPING_FIXTURES / "invalid").glob("*.yaml")}
+    assert names == set(MAPPING_EXPECTED)
+
+
+@pytest.mark.parametrize("name", sorted(MAPPING_EXPECTED))
+def test_invalid_mapping_fails_where_expected(name: str) -> None:
+    errors = _mapping_errors(MAPPING_FIXTURES / "invalid" / name)
+    assert errors, f"{name} should not validate"
+    assert MAPPING_EXPECTED[name] in errors

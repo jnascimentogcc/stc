@@ -105,7 +105,7 @@ public final class ActionCatalog {
             continue;
           }
           String name = pkg + "." + relative.substring(0, relative.length() - ".class".length());
-          classes.add(Class.forName(name.replace('/', '.')));
+          classes.add(Class.forName(name.replace('/', '.'), false, Thread.currentThread().getContextClassLoader()));
         }
       }
       return classes;

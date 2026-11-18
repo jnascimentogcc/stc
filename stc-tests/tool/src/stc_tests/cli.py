@@ -5,7 +5,7 @@ from typing import Annotated
 
 import typer
 
-from stc_tests import __version__, approval, scenarios, settings, state
+from stc_tests import __version__, approval, mapping, scenarios, settings, state
 from stc_tests.catalog import CatalogError, read_catalog
 from stc_tests.contract import ContractError, UnsupportedVersion
 from stc_tests.llm import JsonLLM, LLMError, Usage, make_llm
@@ -296,6 +296,89 @@ def reject(
         typer.echo(str(error), err=True)
         raise typer.Exit(1) from error
     cases.save()
+
+
+@app.command(name="mapping")
+def draft_mappings(
+    application: Annotated[str | None, typer.Argument()] = None,
+    all_: Annotated[bool, typer.Option("--all")] = False,
+    specs: SpecsOption = None,
+    output: OutputOption = None,
+    force: Annotated[
+        bool, typer.Option("--force", help="Overwrite a mapping file that already exists.")
+    ] = False,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Show the work, call no model.")
+    ] = False,
+) -> None:
+    """Draft the interface mapping of each program, for the migration team to settle and approve.
+
+    Files go to OUTPUT/<application>/mapping/<program>.mapping.yaml. An existing file is never
+    overwritten: the new draft goes to <program>.proposed.mapping.yaml unless --force is given."""
+    root, out = settings.specs_dir(specs), settings.output_dir(output)
+    llm = None if dry_run else _llm()
+    failed = False
+    total = Usage()
+    for folder in _targets(root, application, all_):
+        try:
+            read = read_application(root, folder)
+        except (ContractError, KeyError) as error:
+            typer.echo(f"{folder}: REFUSED: {error}", err=True)
+            failed = True
+            continue
+        for feature in read.features:
+            if llm is None:
+                prompt = mapping.build_prompt(feature)
+                typer.echo(f"{folder}/{feature.slug}: prompt of {len(prompt)} characters (dry run)")
+                continue
+            try:
+                document, used = mapping.draft_mapping(read.name, feature, llm)
+            except (LLMError, ContractError) as error:
+                typer.echo(f"{folder}/{feature.slug}: FAILED: {error}", err=True)
+                failed = True
+                continue
+            total += used
+            target = out / folder / "mapping" / f"{feature.slug}.mapping.yaml"
+            if target.exists() and not force:
+                target = target.with_name(f"{feature.slug}.proposed.mapping.yaml")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(mapping.dump(document), encoding="utf-8")
+            questions = len(document["open_questions"])
+            typer.echo(f"{folder}/{feature.slug}: drafted in {target}, {questions} open questions")
+    if llm is not None:
+        typer.echo(f"tokens: {total.input_tokens} in, {total.output_tokens} out")
+    raise typer.Exit(1 if failed else 0)
+
+
+@app.command(name="approve-mapping")
+def approve_mapping(
+    application: Annotated[str, typer.Argument()],
+    program: Annotated[str, typer.Argument(help="The feature slug, e.g. program-search-example.")],
+    by: Annotated[str, typer.Option("--by", help="Who approves (a person).")] = "",
+    output: OutputOption = None,
+) -> None:
+    """Approve a mapping once its open questions are settled (edit the file to remove them)."""
+    if not by.strip():
+        typer.echo("Say who approves with --by.", err=True)
+        raise typer.Exit(2)
+    path = settings.output_dir(output) / application / "mapping" / f"{program}.mapping.yaml"
+    try:
+        document = mapping.load_mapping(path)
+        if document["status"] == "approved":
+            typer.echo(f"{path}: already approved by {document['approved_by']}")
+            raise typer.Exit(0)
+        if document["open_questions"]:
+            typer.echo(f"{path}: settle the open questions first:", err=True)
+            for question in document["open_questions"]:
+                typer.echo(f"  - {question}", err=True)
+            raise typer.Exit(1)
+        text = mapping.approve_text(path.read_text(encoding="utf-8"), by.strip())
+        path.write_text(text, encoding="utf-8")
+        mapping.load_mapping(path)  # what was written must still follow the contract
+    except ContractError as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(1) from error
+    typer.echo(f"{path}: approved by {by.strip()}")
 
 
 def _llm() -> JsonLLM:

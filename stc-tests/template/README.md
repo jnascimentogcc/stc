@@ -15,6 +15,7 @@ that runs against the migrated system. No model and no STC run here; everything 
 | `src/test/java/stctests/catalog/` | `@Action` (description and layer of a step definition) and the generator of the action catalog. |
 | `catalog/actions.json` | The action catalog, generated from the step definitions: expression, parameters, description, layer. The agents bind steps only to actions listed here. |
 | `src/test/java/stctests/support/` | `Sidecar` (validates against the contract and refuses what does not follow it) and `Target`. |
+| `mapping/<application>/` | The interface mapping per program (`*.mapping.yaml`): which request field carries which input and where each result sits. The steps read it; an unapproved mapping keeps the scenarios pending. |
 | `contract/` | A copy of `contracts/` of the STC repository: the JSON Schemas and fixtures. Kept equal by a test in `stc-tests/tool`. |
 
 The scenarios, sidecar and steps shipped here are a sample (a keyed table search) so the template

@@ -16,6 +16,8 @@ from jsonschema import Draft202012Validator
 
 SIDECAR = "stc.spec-sidecar"
 INDEX = "stc.spec-index"
+MAPPING = "stc.interface-mapping"
+_SCHEMA_FILES = {SIDECAR: "spec-sidecar", INDEX: "spec-index", MAPPING: "interface-mapping"}
 SUPPORTED_MAJOR = 1
 CONTRACTS_ENV = "STC_TESTS_CONTRACTS"
 
@@ -69,7 +71,7 @@ def violations(document: Mapping[str, Any], schema: str) -> list[str]:
 def validate(document: Mapping[str, Any], contract: str) -> None:
     """Check the version, then the schema; raise `ContractError` with what is wrong."""
     check_version(document, contract)
-    schema = "spec-sidecar" if contract == SIDECAR else "spec-index"
+    schema = _SCHEMA_FILES[contract]
     problems = violations(document, schema)
     if problems:
         raise ContractError("; ".join(problems[:5]) + (" ..." if len(problems) > 5 else ""))

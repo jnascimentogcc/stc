@@ -1,0 +1,15 @@
+schema: stc.interface-mapping/1.2
+application: search
+program: program-search-example
+status: draft
+legacy: {kind: console, executable: false, inputs: [{name: keyedId}]}
+target:
+  kind: http
+  request: {method: POST, path: /program-search-example/runs}
+  fields: {keyedId: keyedId}
+  results: {keyedMessage: keyedSearch.message}
+compare: {mode: transcript}
+accepted_differences: []
+open_questions:
+  - Does the target return the full console transcript or only structured results?
+future_property: allowed by a minor version

@@ -51,3 +51,18 @@ uv run stc-tests reject APP TC-0003 --by "Name" --reason "why" --output DIR
   text changes after approval or when the text of a specification item it covers changes.
 - The tool never writes steps into an approved scenario; regeneration only proposes
   (`<feature>.proposed.feature`) unless `--force` is given.
+
+## Interface mapping
+
+```bash
+uv run stc-tests mapping APP --specs DIR --output DIR [--force|--dry-run]   # draft, for the migration team
+uv run stc-tests approve-mapping APP PROGRAM --by "Name" --output DIR
+```
+
+`mapping` writes `OUTPUT/<application>/mapping/<program>.mapping.yaml` (the format is
+`contracts/interface-mapping.schema.json`). The model proposes the inputs, the request and the result
+paths; the code builds the file, always adds the question of confirming the names against the target's
+contract and leaves `accepted_differences` empty. An existing file is never overwritten (the new draft goes to
+`<program>.proposed.mapping.yaml` unless `--force`). `approve-mapping` refuses until the open
+questions are removed by editing the file, then sets `status: approved`, who and when, keeping your
+comments.

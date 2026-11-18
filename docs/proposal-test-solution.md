@@ -150,6 +150,8 @@ The tool keeps a single test stack for every client. Unit tests in the target's 
 - **Normalization rules** for the comparison.
 - **Accepted differences:** divergences decided on purpose, with justification.
 
+**Format and ownership (decided).** One YAML file per program, `mapping/<application>/<program>.mapping.yaml`, in the client's test repository, validated by `contracts/interface-mapping.schema.json` (`stc.interface-mapping/1`, same versioning rule as the sidecar). It has `legacy` (kind, `executable`, the inputs in order), `target` (request, `fields`: logical input to body property, `results`: logical result to response path), `compare` (mode and normalization), `accepted_differences` (each with justification and who decided) and `open_questions`. `stc-tests mapping` drafts it from the specification; the draft always carries one standing question, to confirm the field names and paths against the target's contract, and it never fills `accepted_differences`, which only people decide. `stc-tests approve-mapping` refuses while questions remain, and the schema forbids an approved mapping with open questions or without who approved it and when. The Java steps read the mapping at run time, so a change in the target's interface touches the mapping, not the steps or the scenarios, and a mapping that is not approved keeps the contract-level scenarios pending (skipped, not failed).
+
 The AI proposes a draft from the spec and the legacy code, and the migration team approves. If the same team defines the mapping and implements, an error in the mapping contaminates both ends, so decisions are recorded and visible in review. Until an approved mapping exists, contract-level tests stay pending.
 
 ## Gherkin scenarios and action library
@@ -389,7 +391,7 @@ It measures requirement coverage, case approval rate, divergences found, injecte
 
 ## Open decisions and next steps
 
-Today there are thirteen points to decide or confirm before starting the pilot.
+Today there are twelve points to decide or confirm before starting the pilot.
 
 **Decisions**
 
@@ -398,7 +400,7 @@ Today there are thirteen points to decide or confirm before starting the pilot.
 - [ ] Jira convention: a "Test Case" ticket type or a standard label, and whether clients' projects have restrictions.
 - [ ] LLM provider and contractual terms (zero retention, DPA).
 - [ ] Where the agents run: the consultancy's environment or the client's repository, and where the Claude Code that implements runs.
-- [ ] Format of the interface mapping file and who maintains it.
+- [x] Interface mapping file: YAML validated by a JSON Schema in `contracts/`, in the client's test repository (`mapping/<application>/<program>.mapping.yaml`), drafted by the AI and approved by the migration team.
 - [x] Review frontend: none in the pilot, to be reconsidered after the pilot metrics.
 
 **To confirm**

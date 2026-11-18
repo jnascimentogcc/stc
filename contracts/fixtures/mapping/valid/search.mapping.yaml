@@ -1,0 +1,48 @@
+# The interface mapping of the keyed table search: the console prompts of the legacy program
+# become the fields of one HTTP call on the target.
+schema: stc.interface-mapping/1
+application: search
+program: program-search-example
+status: approved
+approved_by: Migration team
+approved_at: 2026-11-18T09:00:00Z
+proposed_by:
+  model: example-model
+  prompt_version: mapping-1
+legacy:
+  kind: console
+  executable: false
+  inputs:
+    - {name: keyedId, prompt: "Enter id-1"}
+    - {name: tripleId1, prompt: "Enter id-1 (three ids)"}
+    - {name: tripleId2, prompt: "Enter id-2"}
+    - {name: tripleId3, prompt: "Enter id-3"}
+    - {name: sequentialId, prompt: "Enter the id to search sequentially"}
+target:
+  kind: http
+  request: {method: POST, path: /program-search-example/runs}
+  fields:
+    keyedId: keyedId
+    tripleId1: tripleId1
+    tripleId2: tripleId2
+    tripleId3: tripleId3
+    sequentialId: sequentialId
+  results:
+    keyedFound: keyedSearch.found
+    keyedMessage: keyedSearch.message
+    keyedRecordId1: keyedSearch.record.id1
+    keyedRecordId2: keyedSearch.record.id2
+    keyedRecordId3: keyedSearch.record.id3
+    keyedRecordName: keyedSearch.record.name
+    sequentialMessage: sequentialSearch.message
+compare:
+  mode: structured
+  normalization:
+    - {rule: trim trailing spaces of text results}
+accepted_differences:
+  - id: AD-01
+    description: The target answers with structured fields, not the console transcript.
+    justification: The transcript layout is not part of the behaviour the migration must keep.
+    decided_by: Migration team
+    covers: [program-search-example/FR-06]
+open_questions: []
