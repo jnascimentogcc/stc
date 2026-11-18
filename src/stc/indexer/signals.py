@@ -386,6 +386,13 @@ _CLIENT_CALL = re.compile(
 _ENV_VAR = re.compile(
     r"\b([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*)_(?:URL|URI|HOST|ENDPOINT|BASE_URL|ADDR|ADDRESS)\b"
 )
+# A client call whose first argument is a variable plus a path: `fetch(process.env.API_URL + '/x')`,
+# `axios.get(baseUrl + "/x")`.
+_CONCAT_CALL = re.compile(
+    r"""(?:\bfetch|\baxios(?:\.\w+)?|\$http(?:\.\w+)?|\bhttp\.(?:get|post|put|delete|patch)"""
+    r"""|\bhttpClient\.\w+|\bgot(?:\.\w+)?|\bky(?:\.\w+)?)"""
+    r"""\(\s*([A-Za-z_$][\w$.]*)\s*\+\s*[`'"](/[^`'"\s]*)"""
+)
 _INTERNAL_SUFFIXES = (".local", ".internal", ".svc", ".lan", ".cluster.local")
 _IGNORED_URL_HOSTS = frozenset(
     {"www.w3.org", "schemas.xmlsoap.org", "json-schema.org", "schemas.microsoft.com",
@@ -424,6 +431,21 @@ def _http_consumers(lines: list[str]) -> list[Signal]:
         if m := _CLIENT_CALL.search(line):
             found.append(
                 Signal("http", "consumes", normalize_path(m[1]), None, m[1], number, number)
+            )
+        if m := _CONCAT_CALL.search(line):
+            variable, tail = m[1], m[2]
+            env = _ENV_VAR.fullmatch(variable.upper().split(".")[-1])
+            host = env.group(1).lower().replace("_", "-") if env else None
+            found.append(
+                Signal(
+                    "http",
+                    "consumes",
+                    normalize_path(tail),
+                    host,
+                    f"{variable} + {tail}",
+                    number,
+                    number,
+                )  # fmt: skip
             )
         for env_var in _ENV_VAR.finditer(line):
             token = env_var.group(1).lower().replace("_", "-")

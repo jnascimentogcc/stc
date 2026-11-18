@@ -305,3 +305,17 @@ export function build(app: FastifyInstance) {
         ("POST /appointments/:id/reschedule", 5),  # the line of the call, not of the path
         ("PATCH /appointments/:id", 10),
     ]
+
+
+def test_client_call_with_a_variable_plus_a_path() -> None:
+    text = (
+        "fetch(process.env.REACT_APP_API_URL + '/identity/check/' + token, {});\n"
+        'axios.get(baseUrl + "/orders/" + id);\n'
+    )
+    found = pick(signals("src/a.js", text, "javascript"), "http", "consumes")
+    assert (
+        "/identity/check",
+        "react-app-api",
+        "process.env.REACT_APP_API_URL + /identity/check/",
+    ) in found
+    assert ("/orders", None, "baseUrl + /orders/") in found
