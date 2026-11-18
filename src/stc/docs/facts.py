@@ -515,6 +515,7 @@ def _link_handlers(conn: psycopg.Connection, app_id: int, facts: AppFacts) -> No
     for path, lines_ in pending.items():
         made = code_units.with_inline_handlers(graph, path, lines_)
         code_units.add_inline(graph, [r for r in calls if r.path == path], made.values())
+        code_units.add_php_class_calls(graph, path, texts.get(path, {}), made.values())
         for line, unit in made.items():
             facts.handlers[str(Loc(path, line))] = [unit.key]
 

@@ -312,6 +312,36 @@ def add_inline(graph: UnitGraph, rows: Iterable[SymbolRow], units: Iterable[Unit
                         graph.calls.append(UnitCall(unit.key, target.key, row.path, row.start))
 
 
+_PHP_STATIC_CALL = re.compile(r"\b([A-Z]\w*)::(\w+)\s*\(")
+_PHP_NEW = re.compile(r"\bnew\s+([A-Z]\w*)")
+
+
+def add_php_class_calls(
+    graph: UnitGraph, path: str, texts: dict[int, str], units: Iterable[Unit]
+) -> None:
+    """PHP only. `Class::method(` and `new Class` inside an inline handler reach that class even
+    when the method name is too common to resolve by name alone (`Simulator::run`): the class is
+    named in the code, so the link is certain."""
+    if not path.endswith(".php"):
+        return
+    seen = {(c.caller, c.target, c.line) for c in graph.calls}
+    for unit in units:
+        for number in range(unit.start, unit.end + 1):
+            line = texts.get(number, "")
+            wanted = [(m[1], m[2]) for m in _PHP_STATIC_CALL.finditer(line)]
+            wanted += [(m[1], None) for m in _PHP_NEW.finditer(line)]
+            for owner, method in wanted:
+                for target in graph.units.values():
+                    if target.owner_class != owner or target.path == path:
+                        continue
+                    if (target.name != method) if method else (target.name not in CONSTRUCTORS):
+                        continue
+                    marker = (unit.key, target.key, number)
+                    if marker not in seen:
+                        seen.add(marker)
+                        graph.calls.append(UnitCall(unit.key, target.key, path, number))
+
+
 # --------------------------------------------------------------------------------------------
 # entry points that are not routes
 # --------------------------------------------------------------------------------------------

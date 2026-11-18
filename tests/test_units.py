@@ -11,6 +11,7 @@ from stc.docs.features import detect_features
 from stc.docs.units import (
     SymbolRow,
     add_inline,
+    add_php_class_calls,
     background_entries,
     build_graph,
     handler_hint,
@@ -142,6 +143,33 @@ def test_an_anonymous_callback_gets_a_unit_that_holds_its_calls() -> None:
         ("s.js::@3", "s.js::save"),
         ("s.js::@10", "s.js::save"),
     }
+
+
+def test_a_php_callback_reaches_the_class_it_names_even_for_a_common_method_name() -> None:
+    rows = [
+        d("src/Simulator.php", "Simulator", "class", 1, 20),
+        d("src/Simulator.php", "run", "method", 3, 18),
+        d("src/App.php", "App", "class", 1, 20),
+        d("src/App.php", "run", "method", 5, 18),
+        c("public/index.php", "run", 5),  # `run` is too common to resolve by name alone
+    ]
+    graph = build_graph(rows)
+    made = with_inline_handlers(graph, "public/index.php", [4])
+    add_inline(graph, rows, made.values())
+    assert graph.calls == []
+    texts = {5: "    $out = Simulator::run($input);", 6: "    $app = new App();"}
+    add_php_class_calls(graph, "public/index.php", texts, made.values())
+    assert [(x.caller, x.target) for x in graph.calls] == [
+        ("public/index.php::@4", "src/Simulator.php::Simulator.run")
+    ]
+
+
+def test_the_class_link_is_for_php_only() -> None:
+    rows = [d("S.java", "Simulator", "class", 1, 20), d("S.java", "run", "method", 3, 18)]
+    graph = build_graph(rows)
+    made = with_inline_handlers(graph, "Main.java", [4])
+    add_php_class_calls(graph, "Main.java", {5: "Simulator::run(x);"}, made.values())
+    assert graph.calls == []
 
 
 def test_commands_and_jobs_are_entry_points_when_nothing_calls_them() -> None:
