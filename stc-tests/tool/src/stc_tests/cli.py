@@ -5,7 +5,7 @@ from typing import Annotated
 
 import typer
 
-from stc_tests import __version__, scenarios, settings, state
+from stc_tests import __version__, approval, scenarios, settings, state
 from stc_tests.catalog import CatalogError, read_catalog
 from stc_tests.contract import ContractError, UnsupportedVersion
 from stc_tests.llm import JsonLLM, LLMError, Usage, make_llm
@@ -193,7 +193,9 @@ def write_scenarios(
                 if target.exists() and not force:
                     target = target.with_suffix(".proposed.feature")
                 target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_text(scenarios.render(feature, result.drafts), encoding="utf-8")
+                target.write_text(
+                    scenarios.render(feature, result.drafts, cases.approved_ids()), encoding="utf-8"
+                )
             typer.echo(
                 f"{folder}/{feature.slug}: {len(result.drafts)} drafted"
                 + (f" in {target}" if result.drafts else "")
@@ -201,6 +203,8 @@ def write_scenarios(
             )
             for line in result.rejected:
                 typer.echo(f"  rejected: {line}")
+            for line in result.skipped:
+                typer.echo(f"  skipped: {line}")
             for line in result.missing:
                 typer.echo(f"  missing action: {line}")
         if llm is not None:
@@ -211,6 +215,87 @@ def write_scenarios(
     if llm is not None:
         typer.echo(f"tokens: {total.input_tokens} in, {total.output_tokens} out")
     raise typer.Exit(1 if failed else 0)
+
+
+def _case_files(output: Path | None, application: str) -> tuple[Path, scenarios.Cases]:
+    base = settings.output_dir(output) / application
+    cases_path = base / ".stc-tests" / "cases.json"
+    if not cases_path.is_file():
+        typer.echo(f"{application}: no cases yet in {base} (run `scenarios` first).", err=True)
+        raise typer.Exit(1)
+    return base / "features", scenarios.Cases(cases_path)
+
+
+@app.command()
+def review(
+    application: Annotated[str, typer.Argument()],
+    specs: SpecsOption = None,
+    output: OutputOption = None,
+) -> None:
+    """List the cases with their status; with the specs, flag those whose source changed."""
+    _, cases = _case_files(output, application)
+    changed: set[str] = set()
+    root = settings.specs_dir(specs)
+    if (root / application / "_specs.json").is_file():
+        read = read_application(root, application)
+        changed = set(cases.to_review({i.id: i.text_sha256 for i in read.items()}))
+    counts: dict[str, int] = {}
+    for entry in cases.entries():
+        status = "to_review" if entry["id"] in changed else str(entry.get("status", "draft"))
+        counts[status] = counts.get(status, 0) + 1
+        who = f" by {entry['approved_by']}" if status == "approved" else ""
+        typer.echo(f"{entry['id']}  {status}{who}  {entry['title']}")
+    typer.echo(", ".join(f"{n} {s}" for s, n in sorted(counts.items())) or "no cases")
+
+
+@app.command()
+def approve(
+    application: Annotated[str, typer.Argument()],
+    case_ids: Annotated[list[str] | None, typer.Argument(help="Case IDs, e.g. TC-0001.")] = None,
+    by: Annotated[str, typer.Option("--by", help="Who approves (a person).")] = "",
+    all_drafts: Annotated[bool, typer.Option("--all-drafts", help="Every case in draft.")] = False,
+    output: OutputOption = None,
+) -> None:
+    """Record the approval of drafted cases and mark them @status:approved in the feature file."""
+    if not by.strip():
+        typer.echo("Say who approves with --by.", err=True)
+        raise typer.Exit(2)
+    features, cases = _case_files(output, application)
+    ids = list(case_ids or [])
+    if all_drafts:
+        ids += [e["id"] for e in cases.entries() if e.get("status", "draft") == "draft"]
+    if not ids:
+        typer.echo("Give case IDs or --all-drafts.", err=True)
+        raise typer.Exit(2)
+    try:
+        for line in approval.approve(features, cases, ids, by.strip()):
+            typer.echo(line)
+    except approval.ApprovalError as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(1) from error
+    cases.save()
+
+
+@app.command()
+def reject(
+    application: Annotated[str, typer.Argument()],
+    case_ids: Annotated[list[str], typer.Argument(help="Case IDs, e.g. TC-0003.")],
+    by: Annotated[str, typer.Option("--by", help="Who rejects (a person).")] = "",
+    reason: Annotated[str, typer.Option("--reason", help="Why: kept for the metrics.")] = "",
+    output: OutputOption = None,
+) -> None:
+    """Reject cases: remove them from the feature file and do not propose them again."""
+    if not by.strip() or not reason.strip():
+        typer.echo("Say who rejects (--by) and why (--reason).", err=True)
+        raise typer.Exit(2)
+    features, cases = _case_files(output, application)
+    try:
+        for line in approval.reject(features, cases, case_ids, by.strip(), reason.strip()):
+            typer.echo(line)
+    except approval.ApprovalError as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(1) from error
+    cases.save()
 
 
 def _llm() -> JsonLLM:

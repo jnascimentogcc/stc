@@ -32,3 +32,22 @@ The model is configured by `STC_TESTS_LLM_MODEL`, `OPENAI_API_KEY` and (optional
 variables already set win, and values are never printed), as in `uv run stc-tests --env-file ../../.env scenarios ...`; the client is the small one in `llm.py` (one call, a JSON Schema reply). Prompts
 carry specification text: use real specifications only under the terms agreed with the client.
 Step matching in the tool supports `{string}`, `{int}`, `{float}`, `{word}` and `{}`.
+
+## Human approval
+
+A person decides which drafts become tests; the tool only records it.
+
+```bash
+uv run stc-tests review APP --specs DIR --output DIR            # status of every case
+uv run stc-tests approve APP TC-0001 TC-0002 --by "Name" --output DIR   # or --all-drafts
+uv run stc-tests reject APP TC-0003 --by "Name" --reason "why" --output DIR
+```
+
+- `approve` adds `@status:approved` to the scenario in the feature file and records who, when, the
+  model, the prompt version and a fingerprint of the approved text in `cases.json`.
+- `reject` removes the scenario from the file and keeps the reason (it feeds the approval-rate
+  metric); the same case is not proposed again.
+- A case goes back to **to review** (and loses its tag the next time the file is written) when its
+  text changes after approval or when the text of a specification item it covers changes.
+- The tool never writes steps into an approved scenario; regeneration only proposes
+  (`<feature>.proposed.feature`) unless `--force` is given.

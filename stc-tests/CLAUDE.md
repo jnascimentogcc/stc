@@ -25,6 +25,7 @@ uv sync
 uv run stc-tests check --all --specs DIR
 uv run stc-tests ingest APP --specs DIR --output DIR [--dry-run]
 uv run stc-tests scenarios APP --catalog PATH [--force] [--dry-run]   # needs STC_TESTS_LLM_MODEL
+uv run stc-tests review|approve|reject APP ...   # human approval of drafts (--by is a person)
 uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest
 ```
 
