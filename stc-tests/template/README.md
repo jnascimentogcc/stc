@@ -45,6 +45,13 @@ first, which confirms them and the interface mapping before the target exists:
 SUBJECT=legacy LEGACY_URL=http://host:port mvn -Pacceptance test
 ```
 
+`legacy/php/compose.yml` runs a PHP legacy for this (code mounted read-only; the path is relative to that file):
+
+```bash
+LEGACY_SRC=../../../../examples/php-root/loan-api docker compose -f legacy/php/compose.yml up -d --wait
+docker compose -f legacy/php/compose.yml down
+```
+
 With `SUBJECT=legacy` the steps read `legacy.request` of the mapping (schema 1.1, required when
 `legacy.executable` is true) and the mapping needs no approval; the default subject is `target`
 (`TARGET_URL`). A scenario that fails against the legacy is wrong, not the target. `mapping/loan-api/`

@@ -1,0 +1,25 @@
+# Runs an executable PHP legacy so the scenarios can use it as an oracle (SUBJECT=legacy).
+# The legacy code is mounted read-only and never modified.
+#
+#   LEGACY_SRC=../../../../examples/php-root/loan-api docker compose -f legacy/php/compose.yml up -d
+#   SUBJECT=legacy LEGACY_URL=http://localhost:18080 mvn -Pacceptance test
+#   docker compose -f legacy/php/compose.yml down
+#
+# LEGACY_SRC is the folder of the PHP application (relative paths resolve from this file);
+# LEGACY_PORT changes the host port; LEGACY_DOCROOT is the web root inside the application.
+name: stc-tests-legacy
+
+services:
+  legacy:
+    image: php:8.3-cli
+    working_dir: /app
+    command: ["php", "-S", "0.0.0.0:8080", "-t", "${LEGACY_DOCROOT:-public}"]
+    volumes:
+      - ${LEGACY_SRC:?set LEGACY_SRC to the folder of the PHP application}:/app:ro
+    ports:
+      - "${LEGACY_PORT:-18080}:8080"
+    healthcheck:
+      test: ["CMD", "php", "-r", "exit(@file_get_contents('http://localhost:8080/health') === false ? 1 : 0);"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
