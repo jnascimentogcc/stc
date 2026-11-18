@@ -1,17 +1,19 @@
 package stctests.support;
 
 /**
- * The target adapter: where the migrated system is. Set {@code TARGET_URL} to its base URL; the
- * acceptance suite refuses to run without it.
+ * The adapter to the system under test: the base URL of the migrated target ({@code TARGET_URL}),
+ * or, with {@code SUBJECT=legacy}, of the executable legacy ({@code LEGACY_URL}).
  */
 public final class Target {
 
   private Target() {}
 
   public static String baseUrl() {
-    String configured = System.getenv("TARGET_URL");
+    Subject subject = Subject.current();
+    String configured = System.getenv(subject.urlVariable());
     if (configured == null || configured.isBlank()) {
-      throw new IllegalStateException("TARGET_URL is not set: point it to the system under test");
+      throw new IllegalStateException(
+          subject.urlVariable() + " is not set: point it to the system under test");
     }
     return configured;
   }

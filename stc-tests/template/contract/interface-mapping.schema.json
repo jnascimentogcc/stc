@@ -35,11 +35,32 @@
     "legacy": {
       "type": "object",
       "required": ["kind", "executable", "inputs"],
+      "if": { "properties": { "executable": { "const": true } }, "required": ["executable"] },
+      "then": { "required": ["request"] },
       "properties": {
         "kind": { "enum": ["console", "http", "batch", "args"] },
         "executable": {
           "description": "Whether the tests may run the legacy. Always false for COBOL, which is never executed.",
           "type": "boolean"
+        },
+        "request": {
+          "description": "How an executable legacy is called over HTTP, in the same terms as `target`: the tests run the same scenarios against it as an oracle. Required when `executable` is true (schema 1.1).",
+          "type": "object",
+          "required": ["method", "path", "fields", "results"],
+          "properties": {
+            "method": { "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"] },
+            "path": { "type": "string", "pattern": "^/" },
+            "fields": {
+              "description": "Logical input name -> property of the JSON request body.",
+              "type": "object",
+              "additionalProperties": { "type": "string", "minLength": 1 }
+            },
+            "results": {
+              "description": "Logical result name -> JSON path in the response.",
+              "type": "object",
+              "additionalProperties": { "type": "string", "minLength": 1 }
+            }
+          }
         },
         "inputs": {
           "description": "How the legacy is fed, in order. `name` is the logical field the target mapping refers to.",

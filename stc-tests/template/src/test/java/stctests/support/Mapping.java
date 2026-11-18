@@ -86,22 +86,46 @@ public final class Mapping {
     return "approved".equals(document.get("status").asText());
   }
 
+  /**
+   * Whether the scenarios may run against the current {@link Subject}. The target needs an approved
+   * mapping. The legacy needs only to be executable: the run itself checks the mapping against the
+   * real system, so it is how a mapping is confirmed, not something to approve first.
+   */
+  public boolean usable() {
+    if (Subject.current() == Subject.LEGACY) {
+      return document.at("/legacy/executable").asBoolean(false);
+    }
+    return approved();
+  }
+
+  private String request() {
+    return Subject.current() == Subject.LEGACY ? "/legacy/request/" : "/target/request/";
+  }
+
+  private String fields() {
+    return Subject.current() == Subject.LEGACY ? "/legacy/request/fields/" : "/target/fields/";
+  }
+
+  private String results() {
+    return Subject.current() == Subject.LEGACY ? "/legacy/request/results/" : "/target/results/";
+  }
+
   public String method() {
-    return document.at("/target/request/method").asText();
+    return required(request(), "method");
   }
 
   public String path() {
-    return document.at("/target/request/path").asText();
+    return required(request(), "path");
   }
 
   /** The request body property that carries a logical input. */
   public String field(String logicalName) {
-    return required("/target/fields/", logicalName);
+    return required(fields(), logicalName);
   }
 
   /** The JSON path in the response of a logical result. */
   public String result(String logicalName) {
-    return required("/target/results/", logicalName);
+    return required(results(), logicalName);
   }
 
   private String required(String pointer, String name) {

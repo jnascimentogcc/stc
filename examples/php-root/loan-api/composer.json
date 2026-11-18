@@ -1,0 +1,12 @@
+{
+    "name": "example/loan-api",
+    "description": "A tiny fictional loan simulation API, used to exercise STC and stc-tests on PHP.",
+    "type": "project",
+    "license": "MIT",
+    "require": {
+        "php": ">=8.1"
+    },
+    "autoload": {
+        "psr-4": { "LoanApi\\": "src/" }
+    }
+}

@@ -1,0 +1,31 @@
+# Interface mapping of the PHP loan simulation. The legacy side was written from the code and is
+# confirmed by running the scenarios against it (SUBJECT=legacy). The target side is provisional:
+# it needs the OpenAPI of the target.
+schema: stc.interface-mapping/1.1
+application: loan-api
+program: endpoints-public-index-php
+status: draft
+legacy:
+  kind: http
+  executable: true
+  inputs:
+    - {name: amount, description: "Number, or numeric text, which PHP also accepts."}
+    - {name: months, description: "Whole number from 1 to 60."}
+    - {name: annualRate, description: "Number from 0 to 100."}
+  request:
+    method: POST
+    path: /simulations
+    fields: {amount: amount, months: months, annualRate: annualRate}
+    results: {installment: installment, totalPaid: totalPaid, totalInterest: totalInterest, error: error}
+target:
+  kind: http
+  request: {method: POST, path: /api/v1/simulations}   # provisional: confirm against the OpenAPI
+  fields: {amount: amount, months: months, annualRate: annualRate}
+  results: {installment: installment, totalPaid: totalPaid, totalInterest: totalInterest, error: detail}
+compare:
+  mode: structured
+  normalization:
+    - {rule: compare money as numbers with two decimals, applies_to: "installment, totalPaid, totalInterest"}
+accepted_differences: []
+open_questions:
+  - Obtain the OpenAPI of the target and confirm the path, the property names, the result paths and the status codes for validation errors (the legacy answers 422 with an error field; the target plans problem details).

@@ -2,6 +2,19 @@
   "schema" : "stc.action-catalog/1",
   "actions" : [ {
     "keyword" : "When",
+    "expression" : "I call the method {string} on the path {string}",
+    "description" : "Calls any method on any path of the API, with an empty JSON body.",
+    "layer" : "core",
+    "implementation" : "LoanSteps.call",
+    "parameters" : [ {
+      "name" : "method",
+      "type" : "String"
+    }, {
+      "name" : "path",
+      "type" : "String"
+    } ]
+  }, {
+    "keyword" : "When",
     "expression" : "I search the keyed table for the id {string}",
     "description" : "Searches the keyed table by the first id.",
     "layer" : "domain",
@@ -37,6 +50,58 @@
       "type" : "String"
     } ]
   }, {
+    "keyword" : "When",
+    "expression" : "I simulate a loan of {string} for {string} months at {string} percent a year",
+    "description" : "Simulates a loan, sending the amount, the number of months and the yearly rate.",
+    "layer" : "domain",
+    "implementation" : "LoanSteps.simulate",
+    "parameters" : [ {
+      "name" : "amount",
+      "type" : "String"
+    }, {
+      "name" : "months",
+      "type" : "String"
+    }, {
+      "name" : "annualRate",
+      "type" : "String"
+    } ]
+  }, {
+    "keyword" : "When",
+    "expression" : "I simulate a loan with the amount {string} written as text, for {string} months at {string} percent a year",
+    "description" : "Simulates a loan whose amount is sent as text instead of as a number.",
+    "layer" : "domain",
+    "implementation" : "LoanSteps.simulateWithTextAmount",
+    "parameters" : [ {
+      "name" : "amount",
+      "type" : "String"
+    }, {
+      "name" : "months",
+      "type" : "String"
+    }, {
+      "name" : "annualRate",
+      "type" : "String"
+    } ]
+  }, {
+    "keyword" : "When",
+    "expression" : "I simulate a loan without the field {string}",
+    "description" : "Simulates a valid loan leaving out one field (amount, months or annualRate).",
+    "layer" : "domain",
+    "implementation" : "LoanSteps.simulateWithout",
+    "parameters" : [ {
+      "name" : "field",
+      "type" : "String"
+    } ]
+  }, {
+    "keyword" : "Then",
+    "expression" : "the installment is {string}",
+    "description" : "Checks the monthly installment, compared as a number.",
+    "layer" : "domain",
+    "implementation" : "LoanSteps.installment",
+    "parameters" : [ {
+      "name" : "expected",
+      "type" : "String"
+    } ]
+  }, {
     "keyword" : "Then",
     "expression" : "the keyed result is {string}",
     "description" : "Checks that the keyed search found nothing and showed the given message.",
@@ -46,6 +111,13 @@
       "name" : "message",
       "type" : "String"
     } ]
+  }, {
+    "keyword" : "Given",
+    "expression" : "the loan API is ready",
+    "description" : "Checks that the loan API is up.",
+    "layer" : "domain",
+    "implementation" : "LoanSteps.ready",
+    "parameters" : [ ]
   }, {
     "keyword" : "Given",
     "expression" : "the program SEARCH-EXAMPLE is ready with the test data",
@@ -74,12 +146,52 @@
     } ]
   }, {
     "keyword" : "Then",
+    "expression" : "the response error is {string}",
+    "description" : "Checks the error message of the last response.",
+    "layer" : "domain",
+    "implementation" : "LoanSteps.error",
+    "parameters" : [ {
+      "name" : "expected",
+      "type" : "String"
+    } ]
+  }, {
+    "keyword" : "Then",
+    "expression" : "the response status is {int}",
+    "description" : "Checks the HTTP status of the last response.",
+    "layer" : "core",
+    "implementation" : "LoanSteps.status",
+    "parameters" : [ {
+      "name" : "expected",
+      "type" : "int"
+    } ]
+  }, {
+    "keyword" : "Then",
     "expression" : "the sequential result is {string}",
     "description" : "Checks the message of the sequential search.",
     "layer" : "domain",
     "implementation" : "SearchSteps.sequentialResult",
     "parameters" : [ {
       "name" : "message",
+      "type" : "String"
+    } ]
+  }, {
+    "keyword" : "Then",
+    "expression" : "the total interest is {string}",
+    "description" : "Checks the total interest, compared as a number.",
+    "layer" : "domain",
+    "implementation" : "LoanSteps.totalInterest",
+    "parameters" : [ {
+      "name" : "expected",
+      "type" : "String"
+    } ]
+  }, {
+    "keyword" : "Then",
+    "expression" : "the total paid is {string}",
+    "description" : "Checks the total paid, compared as a number.",
+    "layer" : "domain",
+    "implementation" : "LoanSteps.totalPaid",
+    "parameters" : [ {
+      "name" : "expected",
       "type" : "String"
     } ]
   } ]

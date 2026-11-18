@@ -110,6 +110,7 @@ MAPPING_EXPECTED = {
     "bad-difference-id.mapping.yaml": ("accepted_differences/0/id", "pattern"),
     "bad-method.mapping.yaml": ("target/request/method", "enum"),
     "executable-not-boolean.mapping.yaml": ("legacy/executable", "type"),
+    "executable-without-request.mapping.yaml": ("legacy", "required"),
     "relative-path.mapping.yaml": ("target/request/path", "pattern"),
     "unknown-major.mapping.yaml": ("schema", "pattern"),
 }

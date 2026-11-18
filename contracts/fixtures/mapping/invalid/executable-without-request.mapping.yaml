@@ -1,0 +1,31 @@
+# An executable legacy (PHP over HTTP): the same scenarios run against it as an oracle and against
+# the target. Both sides are described in the same terms.
+schema: stc.interface-mapping/1.1
+application: loan-api
+program: loan-simulation
+status: approved
+approved_by: Migration team
+approved_at: "2026-11-18T09:00:00Z"
+legacy:
+  kind: http
+  executable: true
+  inputs:
+    - {name: amount}
+    - {name: months}
+    - {name: annualRate}
+  requestX:
+    method: POST
+    path: /simulations
+    fields: {amount: amount, months: months, annualRate: annualRate}
+    results: {installment: installment, totalPaid: totalPaid, totalInterest: totalInterest, error: error}
+target:
+  kind: http
+  request: {method: POST, path: /api/v1/simulations}
+  fields: {amount: amount, months: months, annualRate: annualRate}
+  results: {installment: installment, totalPaid: totalPaid, totalInterest: totalInterest, error: detail}
+compare:
+  mode: structured
+  normalization:
+    - {rule: compare money to two decimals, applies_to: installment, totalPaid, totalInterest}
+accepted_differences: []
+open_questions: []

@@ -33,7 +33,7 @@ public class SearchSteps {
   @Given("the program SEARCH-EXAMPLE is ready with the test data")
   public void ready() {
     Assumptions.assumeTrue(
-        MAPPING.approved(), "the interface mapping is not approved: contract-level tests stay pending");
+        MAPPING.usable(), "the interface mapping is not approved for this subject: contract-level tests stay pending");
     given().baseUri(Target.baseUrl()).get("/health").then().statusCode(200);
   }
 

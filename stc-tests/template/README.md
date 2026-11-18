@@ -36,6 +36,20 @@ The default build checks the contract fixtures, fails if `catalog/actions.json` 
 `@status:approved` (the tag `stc-tests approve` adds), so a draft never runs against the target; the report is
 `target/cucumber.html`.
 
+### Oracle: the same scenarios against an executable legacy
+
+When the legacy can be run (a PHP HTTP API, for example, never COBOL), the same scenarios run against it
+first, which confirms them and the interface mapping before the target exists:
+
+```bash
+SUBJECT=legacy LEGACY_URL=http://host:port mvn -Pacceptance test
+```
+
+With `SUBJECT=legacy` the steps read `legacy.request` of the mapping (schema 1.1, required when
+`legacy.executable` is true) and the mapping needs no approval; the default subject is `target`
+(`TARGET_URL`). A scenario that fails against the legacy is wrong, not the target. `mapping/loan-api/`
+is a sample for `examples/php-root/`.
+
 ## GitHub Actions
 
 `.github/workflows/validate-scenarios.yml` runs the default build on pull requests that touch

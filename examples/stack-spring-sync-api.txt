@@ -1,0 +1,5 @@
+Language and runtime: Java 21.
+Framework: Spring Boot 3, Spring Web and Bean Validation.
+API: synchronous REST with JSON, documented with OpenAPI; the response carries the result, with no run id or polling; validation errors returned as problem details.
+Persistence: none unless the legacy program stores data.
+Tests: JUnit 5 for the backend.
